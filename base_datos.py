@@ -145,24 +145,6 @@ def obtener_incidencias_resumen():
         df['nombre_real'] = df['usuarios'].apply(lambda x: x['nombre_real'] if x else "")
     return df
 
-def crear_proyecto(codigo, nombre, cliente, partida):
-    """Inserta un nuevo proyecto en la base de datos PTF-2."""
-    try:
-        supabase = conectar()
-        data = {
-            "codigo": codigo,
-            "proyecto_text": nombre,
-            "cliente": cliente,
-            "partida": partida,
-            "estatus": "Activo",
-            "avance": 0
-        }
-        res = supabase.table("proyectos").insert(data).execute()
-        return res
-    except Exception as e:
-        st.error(f"Error en base_datos.crear_proyecto: {e}")
-        return None
-
 def obtener_gantt_real_data(id_p):
     """Extrae datos de hitos reales para el cronograma."""
     supabase = conectar()
