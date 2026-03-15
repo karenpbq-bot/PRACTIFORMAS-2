@@ -31,92 +31,70 @@ def obtener_supervisores():
     return pd.DataFrame(res.data)
 
 # =========================================================
-# 3. GESTIÓN DE PROYECTOS
+# 3. GESTIÓN DE PROYECTOS (ADICIONES)
 # =========================================================
 
-def obtener_proyectos(palabra_clave=""):
-    supabase = conectar()
-    query = supabase.table("proyectos").select("id, codigo, proyecto_text, cliente, estatus, avance, partida")
-    
-    # Si hay una palabra clave, buscamos en los tres campos principales
-    if palabra_clave:
-        # La lógica .or_ busca coincidencias en cualquiera de las columnas
-        query = query.or_(f"codigo.ilike.%{palabra_clave}%,proyecto_text.ilike.%{palabra_clave}%,cliente.ilike.%{palabra_clave}%")
-    
-    res = query.execute()
-    df = pd.DataFrame(res.data)
-    
-    if not df.empty:
-        df['proyecto_display'] = "[" + df['codigo'].astype(str) + "] " + df['proyecto_text']
-        
-    return df
-
-def actualizar_proyecto(id_p, campos):
-    supabase = conectar()
-    supabase.table("proyectos").update(campos).eq("id", id_p).execute()
-
-def eliminar_proyecto(id_p):
-    supabase = conectar()
-    supabase.table("proyectos").delete().eq("id", id_p).execute()
-
-def obtener_datos_reporte(id_proyecto):
-    """Extrae el inventario detallado desde la nube para exportación a Excel y WhatsApp."""
+def crear_proyecto(codigo, nombre, cliente, partida):
+    """Inserta un nuevo proyecto en la base de datos PTF-2."""
     try:
         supabase = conectar()
-        res = supabase.table("productos").select("ubicacion, tipo, ctd, ml").eq("proyecto_id", id_proyecto).execute()
-        
-        df = pd.DataFrame(res.data)
-        if not df.empty:
-            # Renombramos las columnas para que el Excel se vea profesional
-            df.columns = ['Ubicación', 'Tipo', 'Cantidad', 'Metros Lineales']
-            return df
-        return pd.DataFrame() # Devuelve un DataFrame vacío si no hay datos
+        data = {
+            "codigo": codigo,
+            "proyecto_text": nombre,
+            "cliente": cliente,
+            "partida": partida,
+            "estatus": "Activo",
+            "avance": 0
+        }
+        res = supabase.table("proyectos").insert(data).execute()
+        return res
     except Exception as e:
-        st.error(f"Error al generar reporte: {e}")
-        return pd.DataFrame()
+        st.error(f"Error en base_datos.crear_proyecto: {e}")
+        return None
 
 # =========================================================
-# 4. GESTIÓN DE PRODUCTOS Y AVANCE
+# 4. GESTIÓN DE PRODUCTOS Y SEGUIMIENTO (AJUSTES)
 # =========================================================
 
-def agregar_producto_manual(id_p, u, t, c, m):
+def obtener_productos_por_proyecto(id_proyecto):
+    """Recupera los productos asociados a un proyecto específico."""
     supabase = conectar()
-    supabase.table("productos").insert({"proyecto_id": id_p, "ubicacion": u, "tipo": t, "ctd": c, "ml": m}).execute()
-
-def obtener_resumen_inventario(id_proyecto):
-    """Calcula la sumatoria de cantidades y metros lineales de un proyecto desde la nube."""
-    try:
-        supabase = conectar()
-        # Traemos solo las columnas necesarias para ahorrar ancho de banda
-        res = supabase.table("productos").select("ctd, ml").eq("proyecto_id", id_proyecto).execute()
-        
-        if res.data:
-            df = pd.DataFrame(res.data)
-            total_ctd = df['ctd'].sum()
-            total_ml = df['ml'].sum()
-            return total_ctd, total_ml
-        return 0, 0
-    except Exception as e:
-        # En caso de error, devolvemos ceros para que la app no colapse
-        return 0, 0
-
-def actualizar_avance_real(id_p):
-    supabase = conectar()
-    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
-    total = len(prods.data)
-    if total == 0: return
-    ids = [p['id'] for p in prods.data]
-    segs = supabase.table("seguimiento").select("id").in_("producto_id", ids).execute()
-    nuevo_avance = (len(segs.data) / (total * 8)) * 100
-    supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
-    
-def obtener_gantt_real_data(id_p):
-    supabase = conectar()
-    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
-    ids = [p['id'] for p in prods.data]
-    res = supabase.table("seguimiento").select("hito, fecha").in_("producto_id", ids).execute()
+    res = supabase.table("productos").select("*").eq("proyecto_id", id_proyecto).execute()
     return pd.DataFrame(res.data)
 
+def obtener_seguimiento(id_producto):
+    """Obtiene el historial de hitos de un producto."""
+    supabase = conectar()
+    res = supabase.table("seguimiento").select("*").eq("producto_id", id_producto).execute()
+    return pd.DataFrame(res.data)
+
+def guardar_seguimiento(id_producto, hito, fecha):
+    """Guarda o actualiza un hito. Maneja el formato de fecha para la DB."""
+    try:
+        supabase = conectar()
+        # Intentamos convertir DD/MM/YYYY a YYYY-MM-DD para la base de datos
+        try:
+            fecha_db = datetime.strptime(fecha, '%d/%m/%Y').strftime('%Y-%m-%d')
+        except:
+            fecha_db = fecha # Si falla, enviamos el texto original
+            
+        data = {
+            "producto_id": id_producto,
+            "hito": hito,
+            "fecha": fecha_db
+        }
+        # upsert: inserta si no existe, actualiza si existe (requiere UNIQUE en producto_id y hito)
+        res = supabase.table("seguimiento").upsert(data).execute()
+        
+        # Actualizamos el avance del proyecto automáticamente
+        res_prod = supabase.table("productos").select("proyecto_id").eq("id", id_producto).execute()
+        if res_prod.data:
+            actualizar_avance_real(res_prod.data[0]['proyecto_id'])
+            
+        return res
+    except Exception as e:
+        st.error(f"Error al guardar hito: {e}")
+        return None
 # =========================================================
 # 5. GESTIÓN DE INCIDENCIAS
 # =========================================================
