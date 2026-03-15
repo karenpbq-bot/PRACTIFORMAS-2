@@ -163,4 +163,25 @@ def crear_proyecto(codigo, nombre, cliente, partida):
         st.error(f"Error en base_datos.crear_proyecto: {e}")
         return None
 
+def obtener_gantt_real_data(id_p):
+    """Extrae datos de hitos reales para el cronograma."""
+    supabase = conectar()
+    # Obtenemos IDs de productos del proyecto
+    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
+    ids = [p['id'] for p in prods.data]
+    if not ids: return pd.DataFrame()
+    res = supabase.table("seguimiento").select("hito, fecha").in_("producto_id", ids).execute()
+    return pd.DataFrame(res.data)
+
+def actualizar_avance_real(id_p):
+    """Calcula el avance basado en 8 hitos por producto."""
+    supabase = conectar()
+    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
+    total_esperado = len(prods.data) * 8
+    if total_esperado == 0: return
+    ids = [p['id'] for p in prods.data]
+    segs = supabase.table("seguimiento").select("id").in_("producto_id", ids).execute()
+    nuevo_avance = (len(segs.data) / total_esperado) * 100
+    supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
+
 
