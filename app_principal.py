@@ -37,10 +37,9 @@ with st.sidebar:
         st.session_state.id_p_sel = None
         st.rerun()
     
-    opciones = ["Seguimiento", "Incidencias", "Gantt", "Usuarios"] 
-    if rol_usuario in ["Administrador", "Gerente"]:
-        opciones.insert(0, "Proyectos")
-        opciones.insert(1, "Crear Nuevo")
+    # Reemplaza el bloque viejo por este:
+    opciones = ["Proyectos", "Seguimiento", "Incidencias", "Gantt", "Usuarios"]
+    menu = st.sidebar.radio("MENÚ PRINCIPAL", opciones)
     
     menu = st.sidebar.radio("MENÚ PRINCIPAL", opciones)
     
@@ -48,53 +47,6 @@ with st.sidebar:
     if st.button("🚪 Cerrar Sesión"):
         st.session_state.autenticado = False
         st.rerun()
-
-# =========================================================
-# MÓDULO: CARTERA DE PROYECTOS
-# =========================================================
-if menu == "Proyectos":
-    if st.session_state.id_p_sel is None:
-        st.header("📂 Cartera de Proyectos")
-        bus_cartera = st.text_input("🔍 Buscar proyecto o cliente...", key="bus_main_cartera")
-        df_cartera = obtener_proyectos(bus_cartera)
-        
-        if df_cartera.empty:
-            st.info("No se encontraron proyectos activos.")
-        
-        if rol_usuario in ["Administrador", "Gerente"] and not df_cartera.empty:
-            opciones_limpieza = {f"{r['proyecto_text']} — {r['cliente']}": r['id'] for _, r in df_cartera.iterrows()}
-            with st.expander("🗑️ Zona de Limpieza Masiva"):
-                st.warning("Esta acción eliminará todos los productos del proyecto seleccionado.")
-                proy_a_vaciar = st.selectbox("Proyecto a vaciar:", ["Seleccione..."] + list(opciones_limpieza.keys()), key="vaciar_proy")
-                if st.button("⚠️ ELIMINAR TODOS LOS PRODUCTOS", type="secondary", key="btn_limpieza_masiva"):
-                    if proy_a_vaciar != "Seleccione...":
-                        borrar_productos_proyecto(opciones_limpieza[proy_a_vaciar])
-                        st.success("Productos eliminados correctamente.")
-                        st.rerun()
-
-        for _, p in df_cartera.iterrows():
-            total_unidades, total_ml = obtener_resumen_inventario(p['id'])
-            try:
-                f_ini_dt = datetime.strptime(str(p['f_ini']), '%Y-%m-%d').strftime('%d/%m/%Y')
-                f_fin_dt = datetime.strptime(str(p['f_fin']), '%Y-%m-%d').strftime('%d/%m/%Y')
-            except:
-                f_ini_dt, f_fin_dt = "N/A", "N/A"
-
-            with st.container(border=True):
-                col_info, col_btn = st.columns([5, 1.5])
-                with col_info:
-                    st.subheader(f"🚀 {p['proyecto_text']}")
-                    st.write(f"👤 **Cliente:** {p['cliente']}")
-                    st.caption(f"🏷️ **Partida:** {p['partida']} | 📅 {f_ini_dt} al {f_fin_dt}")
-                with col_btn:
-                    if st.button("⚙️ GESTIONAR", key=f"btn_gest_{p['id']}", use_container_width=True):
-                        st.session_state.id_p_sel = p['id']
-                        st.rerun()
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Unidades", int(total_unidades))
-                m2.metric("Total ML", f"{total_ml:.2f}")
-                m3.metric("Avance", f"{int(p['avance'])}%")
-                st.progress(float(p['avance'])/100)
 
 # =========================================================
 # MÓDULO: PANEL DE GESTIÓN DETALLADA
@@ -194,50 +146,10 @@ if menu == "Proyectos":
                     st.rerun()
 
 # =========================================================
-# MÓDULO: CREAR NUEVO PROYECTO (AJUSTADO A SUPABASE)
-# =========================================================
-elif menu == "Crear Nuevo":
-    st.header("🏗️ Registro de Proyecto")
-    df_sups = obtener_supervisores()
-    dict_sups = {r['nombre_real']: r['id'] for _, r in df_sups.iterrows()}
-
-    with st.form("crear_p"):
-        c1, c2, c3 = st.columns(3)
-        cli = c1.text_input("Cliente")
-        pro = c2.text_input("Proyecto")
-        par = c3.text_input("Partida")
-        sup_nom = st.selectbox("Responsable:", options=list(dict_sups.keys()))
-        fi = c1.date_input("Inicio", format="DD/MM/YYYY")
-        ff = c2.date_input("Término", value=date.today()+timedelta(days=30), format="DD/MM/YYYY")
-        
-        pcts = {}; cols = st.columns(5)
-        for i, et in enumerate(ETAPAS): 
-            pcts[et] = cols[i].number_input(f"{et} %", 0, 100, 20)
-        
-        if st.form_submit_button("💾 REGISTRAR PROYECTO"):
-            if cli and pro and sum(pcts.values()) == 100:
-                cron = {}; act = fi
-                for et in ETAPAS:
-                    d = round((ff-fi).days * (pcts[et]/100))
-                    f_f = act + timedelta(days=d)
-                    cron[et] = (str(act), str(f_f))
-                    act = f_f + timedelta(days=1)
-                
-                datos_nube = {
-                    "cliente": cli, "proyecto_text": pro, "partida": par, 
-                    "f_ini": str(fi), "f_fin": str(ff), "supervisor_id": dict_sups[sup_nom],
-                    "p_dis_i": cron["Diseño"][0], "p_dis_f": cron["Diseño"][1],
-                    "p_fab_i": cron["Fabricación"][0], "p_fab_f": cron["Fabricación"][1],
-                    "p_tra_i": cron["Traslado"][0], "p_tra_f": cron["Traslado"][1],
-                    "p_ins_i": cron["Instalación"][0], "p_ins_f": cron["Instalación"][1],
-                    "p_ent_i": cron["Entrega"][0], "p_ent_f": cron["Entrega"][1]
-                }
-                conectar().table("proyectos").insert(datos_nube).execute()
-                st.success("✅ Proyecto creado"); st.rerun()
-
-# =========================================================
 # OTROS MÓDULOS (LLAMADAS EXTERNAS)
 # =========================================================
+if menu == "Proyectos":
+    proyectos.mostrar() # <--- Esta es la llamada al nuevo archivo
 elif menu == "Seguimiento": 
     seguimiento.mostrar(supervisor_id=id_usuario if rol_usuario == "Supervisor" else None)
 elif menu == "Gantt": 
