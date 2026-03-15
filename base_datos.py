@@ -31,11 +31,29 @@ def obtener_supervisores():
     return pd.DataFrame(res.data)
 
 # =========================================================
-# 3. GESTIÓN DE PROYECTOS (ADICIONES)
+# 3. GESTIÓN DE PROYECTOS (ACTUALIZADA V2)
 # =========================================================
 
+def obtener_proyectos(palabra_clave=""):
+    """Buscador Universal: Filtra por Código, Nombre o Cliente."""
+    supabase = conectar()
+    query = supabase.table("proyectos").select("id, codigo, proyecto_text, cliente, estatus, avance, partida")
+    
+    if palabra_clave:
+        # Lógica OR para palabras clave en múltiples campos
+        query = query.or_(f"codigo.ilike.%{palabra_clave}%,proyecto_text.ilike.%{palabra_clave}%,cliente.ilike.%{palabra_clave}%")
+    
+    res = query.execute()
+    df = pd.DataFrame(res.data)
+    
+    if not df.empty:
+        # Crea la etiqueta para los selectbox: [PTF-001] Proyecto Ejemplo
+        df['proyecto_display'] = "[" + df['codigo'].astype(str) + "] " + df['proyecto_text']
+        
+    return df
+
 def crear_proyecto(codigo, nombre, cliente, partida):
-    """Inserta un nuevo proyecto en la base de datos PTF-2."""
+    """Inserta un nuevo proyecto con su DNI/Código único."""
     try:
         supabase = conectar()
         data = {
@@ -46,12 +64,15 @@ def crear_proyecto(codigo, nombre, cliente, partida):
             "estatus": "Activo",
             "avance": 0
         }
-        res = supabase.table("proyectos").insert(data).execute()
-        return res
+        return supabase.table("proyectos").insert(data).execute()
     except Exception as e:
-        st.error(f"Error en base_datos.crear_proyecto: {e}")
+        st.error(f"Error al crear: {e}")
         return None
 
+def eliminar_proyecto(id_p):
+    """Borra un proyecto y sus datos asociados (Cascada)."""
+    return conectar().table("proyectos").delete().eq("id", id_p).execute()
+    
 # =========================================================
 # 4. GESTIÓN DE PRODUCTOS Y SEGUIMIENTO (AJUSTES)
 # =========================================================
