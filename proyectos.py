@@ -152,11 +152,19 @@ def mostrar():
                     
                     if st.form_submit_button("Guardar Producto"):
                         if u and t:
-                            conectar().table("productos").insert({
-                                "proyecto_id": st.session_state.id_p_sel,
-                                "ubicacion": u, "tipo": t, "ctd": c, "ml": m
-                            }).execute()
-                            st.success("Producto guardado"); st.rerun()
+                            try:
+                                # LIMPIEZA DE DATOS (Evita el TypeError)
+                                datos_producto = {
+                                    "proyecto_id": int(st.session_state.id_p_sel),
+                                    "ubicacion": str(u).strip(),
+                                    "tipo": str(t).strip(),
+                                    "ctd": int(c),
+                                    "ml": float(m)
+                                }
+                                conectar().table("productos").insert(datos_producto).execute()
+                                st.success("✅ Producto guardado"); st.rerun()
+                            except Exception as e:
+                                st.error(f"Error técnico al guardar: {e}")
 
             # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS ---
             with st.expander("📥 Importar Lista de Productos"):
@@ -167,10 +175,11 @@ def mostrar():
                     df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
                     lote = []
                     for _, r in df_ex.iterrows():
+                        # LIMPIEZA DE DATOS DEL EXCEL
                         lote.append({
                             "proyecto_id": int(st.session_state.id_p_sel),
-                            "ubicacion": str(r['UBICACION']),
-                            "tipo": str(r['TIPO']),
+                            "ubicacion": str(r['UBICACION']).strip(),
+                            "tipo": str(r['TIPO']).strip(),
                             "ctd": int(r['CTD']),
                             "ml": float(r['Medidas (ml)'])
                         })
