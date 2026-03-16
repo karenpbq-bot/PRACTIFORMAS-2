@@ -197,22 +197,36 @@ def mostrar():
             # --- 3. VISUALIZACIÓN DE LA MATRIZ ACTUAL ---
             st.divider()
             res_p = conectar().table("productos").select("*").eq("proyecto_id", st.session_state.id_p_sel).execute()
+            
             if res_p.data:
                 df_matriz = pd.DataFrame(res_p.data)
-                columnas_map = {
+                
+                # REGLA DE ORO: Mapeamos los nombres de la base de datos a nombres amigables
+                # Si en tu base de datos la columna se llama 'ctd', aquí la forzamos a ser 'Cantidad'
+                mapeo_columnas = {
                     'ubicacion': 'Ubicación',
                     'tipo': 'Tipo de Mueble',
-                    'ctd': 'Cantidad', # <--- Ahora se mostrará como "Cantidad"
+                    'ctd': 'Cantidad',
                     'ml': 'Metros Lineales (ml)'
                 }
-                # Filtramos solo las que existen para evitar errores
-                cols_existentes = [c for c in columnas_map.keys() if c in df_matriz.columns]
-                # Mostramos la tabla renombrada para que sea más profesional
+                
+                # Filtramos solo las columnas que existen para no romper el código
+                cols_a_mostrar = [c for c in mapeo_columnas.keys() if c in df_matriz.columns]
+                
+                # Mostramos la tabla con los nombres corregidos
                 st.dataframe(
-                    df_matriz[cols_existentes].rename(columns=columnas_map), 
+                    df_matriz[cols_a_mostrar].rename(columns=mapeo_columnas), 
                     hide_index=True, 
                     use_container_width=True
                 )
+                
+                # --- OPCIONAL: RESUMEN DE METRADOS ---
+                c1, c2 = st.columns(2)
+                total_piezas = df_matriz['ctd'].sum() if 'ctd' in df_matriz.columns else 0
+                total_ml = df_matriz['ml'].sum() if 'ml' in df_matriz.columns else 0
+                c1.metric("Total de Productos", f"{int(total_piezas)} und")
+                c2.metric("Total Metros Lineales", f"{total_ml:.2f} ml")
+                
                 if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
                     conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
                     st.rerun()
