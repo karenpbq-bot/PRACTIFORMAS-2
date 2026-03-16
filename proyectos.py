@@ -126,110 +126,78 @@ def mostrar():
     
     with tab3:
         if st.session_state.get('id_p_sel'):
-            # Recuperamos la info del proyecto desde el DataFrame df_p que cargaste en tab2
+            # 0. Recuperar nombre del proyecto para el título
             info_p = df_p[df_p['id'] == st.session_state.id_p_sel].iloc[0]
             nombre_proyecto = info_p['proyecto_display']
             
             st.subheader(f"📦 Matriz de Productos: {nombre_proyecto}")
-            
-            # --- 1. SECCIÓN: CARGA MANUAL (PLEGABLE Y EN FILA ÚNICA) ---
+
+            # --- 1. SECCIÓN: AGREGAR PRODUCTO (MANUAL) ---
             with st.expander("➕ Agregar Producto", expanded=False):
                 with st.form("form_producto_manual", clear_on_submit=True):
-                    # 4 campos uno al lado del otro
                     c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
-                    u = c1.text_input("Ubicación", placeholder="Ej: 101")
-                    t = c2.text_input("Tipo", placeholder="Ej: Closet")
-                    c = c3.number_input("Cant.", min_value=1, step=1)
+                    u = c1.text_input("Ubicación")
+                    t = c2.text_input("Tipo")
+                    c = c3.number_input("Cantidad", min_value=1, value=1, step=1)
                     m = c4.number_input("ML", min_value=0.0, format="%.2f")
                     
                     if st.form_submit_button("Guardar Producto"):
                         if u and t:
-                            try:
-                                conectar().table("productos").insert({
-                                    "proyecto_id": st.session_state.id_p_sel,
-                                    "ubicacion": u, 
-                                    "tipo": t, 
-                                    "ctd": int(c), # <--- Aquí aseguramos la cantidad
-                                    "ml": m
-                                }).execute()
-                                st.success("Producto añadido correctamente")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error al guardar: {e}")
-                        else:
-                            st.warning("Ubicación y Tipo son obligatorios.")
+                            conectar().table("productos").insert({
+                                "proyecto_id": st.session_state.id_p_sel,
+                                "ubicacion": u, "tipo": t, "ctd": c, "ml": m
+                            }).execute()
+                            st.success("Producto guardado"); st.rerun()
 
-            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (OPTIMIZADA) ---
-            with st.expander("📥 Importar Lista de Productos (Excel/CSV)"):
-                st.info("Columnas requeridas: UBICACION, TIPO, CTD, Medidas (ml)")
-                f_up = st.file_uploader("Seleccionar archivo", type=["xlsx", "csv"], key="uploader_v2")
-                
-                if f_up and st.button("🚀 Iniciar Importación"):
-                    try:
-                        # Lectura del archivo
-                        df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
-                        
-                        # Limpieza rápida: eliminamos filas donde la ubicación o tipo sean nulos
-                        df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
-                        
-                        # CREACIÓN DEL LOTE (List Comprehension para velocidad)
-                        lote_productos = [
-                            {
-                                "proyecto_id": int(st.session_state.id_p_sel),
-                                "ubicacion": str(r['UBICACION']),
-                                "tipo": str(r['TIPO']),
-                                "ctd": int(r['CTD']),
-                                "ml": float(r['Medidas (ml)'])
-                            }
-                            for _, r in df_ex.iterrows()
-                        ]
-                        
-                        # INSERCIÓN MASIVA EN UN SOLO VIAJE
-                        if lote_productos:
-                            conectar().table("productos").insert(lote_productos).execute()
-                            st.success(f"✅ ¡Éxito! Se han cargado {len(lote_productos)} productos al proyecto.")
-                            st.balloons()
-                            st.rerun()
-                            
-                    except Exception as e:
-                        st.error(f"Error en la importación: {e}")
+            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS ---
+            with st.expander("📥 Importar Lista de Productos"):
+                f_up = st.file_uploader("Subir Excel", type=["xlsx", "csv"])
+                if f_up and st.button("🚀 Iniciar Importación Masiva"):
+                    df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
+                    # Limpiamos filas vacías
+                    df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
+                    lote = []
+                    for _, r in df_ex.iterrows():
+                        lote.append({
+                            "proyecto_id": int(st.session_state.id_p_sel),
+                            "ubicacion": str(r['UBICACION']),
+                            "tipo": str(r['TIPO']),
+                            "ctd": int(r['CTD']),
+                            "ml": float(r['Medidas (ml)'])
+                        })
+                    conectar().table("productos").insert(lote).execute()
+                    st.success(f"Se cargaron {len(lote)} productos"); st.rerun()
 
-            # --- 3. VISUALIZACIÓN DE DIAGNÓSTICO ---
+            # --- 3. VISUALIZACIÓN DE LA MATRIZ (4 COLUMNAS) ---
             st.divider()
-            # Seleccionamos todo (*) para ver qué columnas trae realmente la tabla
-            res_p = conectar().table("productos").select("*").eq("proyecto_id", st.session_state.id_p_sel).execute()
+            res_p = conectar().table("productos").select("ubicacion, tipo, ctd, ml").eq("proyecto_id", st.session_state.id_p_sel).execute()
             
             if res_p.data:
-                df_diagnostico = pd.DataFrame(res_p.data)
+                df_matriz = pd.DataFrame(res_p.data)
                 
-                # Esto te mostrará en la App los nombres reales de tus columnas
-                st.write("Columnas detectadas en la base de datos:", list(df_diagnostico.columns))
-                
-                # Intentamos unificar basándonos en lo que encontremos
-                mapeo_flexible = {
+                # Definimos el orden y nombres finales
+                mapeo = {
                     'ubicacion': 'Ubicación',
                     'tipo': 'Tipo',
-                    'ml': 'Metros Lineales (ml)',
                     'ctd': 'Cantidad',
-                    'cantidad': 'Cantidad', # Probamos con nombre largo
-                    'cant': 'Cantidad'      # Probamos con abreviatura
+                    'ml': 'Metros Lineales (ml)'
                 }
                 
-                cols_reales = [c for c in mapeo_flexible.keys() if c in df_diagnostico.columns]
-                df_final = df_diagnostico[cols_reales].rename(columns=mapeo_flexible)
+                # Creamos el dataframe unificado para evitar NameError
+                df_unificado = df_matriz[list(mapeo.keys())].rename(columns=mapeo)
                 
-                st.dataframe(df_final, hide_index=True, use_container_width=True)
+                # Mostramos la tabla unificada
+                st.dataframe(df_unificado, hide_index=True, use_container_width=True)
                 
-                # --- Resumen informativo al pie de la matriz ---
-                c1, c2, c3 = st.columns(3)
-                c1.write(f"**Total Ítems:** {len(df_unificado)}")
-                if 'Cantidad' in df_unificado.columns:
-                    c2.write(f"**Total Piezas:** {int(df_unificado['Cantidad'].sum())}")
-                if 'Metros Lineales (ml)' in df_unificado.columns:
-                    c3.write(f"**Total Metraje:** {df_unificado['Metros Lineales (ml)'].sum():.2f} ml")
+                # Resumen de totales debajo de la tabla
+                c1, c2 = st.columns(2)
+                c1.info(f"**Total Piezas:** {int(df_unificado['Cantidad'].sum())}")
+                c2.info(f"**Total Metraje:** {df_unificado['Metros Lineales (ml)'].sum():.2f} ml")
 
                 if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
                     conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
                     st.rerun()
             else:
-                st.info("La matriz está vacía. Usa las opciones de arriba para cargar productos.")
+                st.info("La matriz está vacía.")
+        else:
+            st.info("⚠️ Selecciona un proyecto en la pestaña 'Listado y Búsqueda' para gestionar su matriz.")
