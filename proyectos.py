@@ -26,44 +26,38 @@ def mostrar():
             f_ini = c1.date_input("Fecha Inicio Global", value=date.today())
             f_fin = c2.date_input("Fecha Término Global", value=date.today() + timedelta(days=30))
 
-        # 2. PONDERACIÓN DE ETAPAS
-        st.write("### ⚖️ Distribución de Tiempo (%)")
-        etapas = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
+        st.write("### ⚖️ Distribución de Tiempo por Etapa (%)")
+        etapas_nombres = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
+        defaults = [15, 40, 10, 25, 10]
         pcts = {}
         cols_pct = st.columns(5)
-        # Valores por defecto sugeridos para sumar 100
-        defaults = [15, 40, 10, 25, 10]
-        
-        for i, et in enumerate(etapas):
+
+        for i, et in enumerate(etapas_nombres):
             pcts[et] = cols_pct[i].number_input(f"{et} %", 0, 100, defaults[i])
 
         # 3. LÓGICA DE CÁLCULO Y PREVISUALIZACIÓN
         st.divider()
-        dias_totales = (f_fin - f_ini).days
-        
-        if dias_totales <= 0:
-            st.error("La fecha de término debe ser posterior a la de inicio.")
-        else:
-            # Calculamos el cronograma temporal para mostrarlo
-            cronograma_calculado = []
-            fecha_aux = f_ini
-            
-            for et in etapas:
-                dias_etapa = round(dias_totales * (pcts[et] / 100))
-                f_f = fecha_aux + timedelta(days=max(0, dias_etapa - 1))
-                cronograma_calculado.append({
-                    "Etapa": et,
-                    "Inicio": fecha_aux.strftime("%d/%m/%Y"),
-                    "Fin": f_f.strftime("%d/%m/%Y"),
-                    "dias": dias_etapa,
-                    "raw_i": str(fecha_aux),
-                    "raw_f": str(f_f)
-                })
-                fecha_aux = f_f + timedelta(days=1)
+dias_totales = (f_fin - f_ini).days
 
-            st.write("#### 🔍 Previsualización del Cronograma")
-            st.table(pd.DataFrame(cronograma_calculado)[["Etapa", "Inicio", "Fin", "dias"]])
+if dias_totales <= 0:
+    st.error("La fecha de término debe ser posterior a la de inicio.")
+else:
+    cronograma_data = []
+    fecha_aux = f_ini
+    for et in etapas_nombres:
+        dias_etapa = round(dias_totales * (pcts[et] / 100))
+        f_f = fecha_aux + timedelta(days=max(0, dias_etapa - 1))
+        cronograma_data.append({
+            "Etapa": et, "Inicio": fecha_aux, "Fin": f_f, "Días": dias_etapa
+        })
+        fecha_aux = f_f + timedelta(days=1)
 
+    # RENDERIZADO DE PREVISUALIZACIÓN
+    df_previs = pd.DataFrame(cronograma_data)
+    df_previs["Inicio"] = df_previs["Inicio"].apply(lambda x: x.strftime("%d/%m/%Y"))
+    df_previs["Fin"] = df_previs["Fin"].apply(lambda x: x.strftime("%d/%m/%Y"))
+    st.write("#### 🔍 Previsualización del Cronograma Planificado")
+    st.table(df_previs[["Etapa", "Inicio", "Fin", "Días"]])
             # 4. BOTÓN DE REGISTRO
             if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
                 if not codigo or not nombre:
@@ -83,11 +77,11 @@ def mostrar():
                         "estatus": "Activo",
                         "avance": 0,
                         # Mapeo de fechas calculadas a las columnas de la DB
-                        "p_dis_i": cronograma_calculado[0]["raw_i"], "p_dis_f": cronograma_calculado[0]["raw_f"],
-                        "p_fab_i": cronograma_calculado[1]["raw_i"], "p_fab_f": cronograma_calculado[1]["raw_f"],
-                        "p_tra_i": cronograma_calculado[2]["raw_i"], "p_tra_f": cronograma_calculado[2]["raw_f"],
-                        "p_ins_i": cronograma_calculado[3]["raw_i"], "p_ins_f": cronograma_calculado[3]["raw_f"],
-                        "p_ent_i": cronograma_calculado[4]["raw_i"], "p_ent_f": cronograma_calculado[4]["raw_f"]
+                        "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
+                        "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
+                        "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
+                        "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
+                        "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
                     }
                     
                     try:
