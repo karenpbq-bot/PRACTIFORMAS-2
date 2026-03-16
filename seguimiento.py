@@ -139,54 +139,49 @@ def mostrar(supervisor_id=None):
         f_hoy = ahora.strftime("%d/%m/%Y")
         
         try:
-            # 1. PROCESAR CLICS PENDIENTES (Los que el usuario marcó rápido)
-            if st.session_state.get('cambios_pendientes'):
-                lote_manual = [
-                    {"producto_id": c['pid'], "hito": c['hito'], "fecha": f_hoy}
-                    for c in st.session_state.cambios_pendientes
-                ]
-                supabase.table("seguimiento").upsert(lote_manual, on_conflict="producto_id, hito").execute()
+            # --- PASO 1: RECOLECTAR TODO EL BLOQUE A GUARDAR ---
+            lote_final = []
 
-            # 2. LÓGICA DE AUTOCOMPLETADO (CASCADA REAL)
-            # Volvemos a consultar la base de datos para ver la foto real post-clics
+            # A. Agregar clics manuales de la sesión
+            if st.session_state.get('cambios_pendientes'):
+                for c in st.session_state.cambios_pendientes:
+                    lote_final.append({"producto_id": c['pid'], "hito": c['hito'], "fecha": f_hoy})
+
+            # B. Generar la cascada (etapas previas)
             seg_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
             df_seg_f = pd.DataFrame(seg_f.data)
             
-            lote_cascada = []
-            if not df_seg_f.empty:
+            # Sumamos a la foto real los cambios que el usuario acaba de hacer en pantalla para la cascada
+            if not df_seg_f.empty or lote_final:
+                # Unimos lo que ya hay en BD con lo que el usuario clicó en esta sesión
+                df_temp_completo = pd.concat([df_seg_f, pd.DataFrame(lote_final)[['producto_id', 'hito']]]) if lote_final else df_seg_f
+                
                 for pid in prods_all['id'].tolist():
-                    hitos_actuales = df_seg_f[df_seg_f['producto_id'] == pid]['hito'].tolist()
+                    hitos_actuales = df_temp_completo[df_temp_completo['producto_id'] == pid]['hito'].unique().tolist()
                     if hitos_actuales:
-                        # Encontramos el índice más alto alcanzado en este producto
                         max_idx = max([HITOS_LIST.index(h) for h in hitos_actuales])
-                        # Creamos registros para todas las etapas anteriores que estén vacías
                         for i in range(max_idx):
                             if HITOS_LIST[i] not in hitos_actuales:
-                                lote_cascada.append({
-                                    "producto_id": pid,
-                                    "hito": HITOS_LIST[i],
-                                    "fecha": f_hoy
-                                })
+                                lote_final.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
 
-            # 3. INSERCIÓN MASIVA DE ETAPAS PREVIAS
-            if lote_cascada:
-                supabase.table("seguimiento").upsert(lote_cascada, on_conflict="producto_id, hito").execute()
+            # --- PASO 2: LIMPIEZA CRÍTICA DE DUPLICADOS (Evita Error 21000) ---
+            if lote_final:
+                df_limpio = pd.DataFrame(lote_final).drop_duplicates(subset=['producto_id', 'hito'])
+                registros_a_subir = df_limpio.to_dict(orient='records')
 
-            # 4. ACTUALIZAR PROYECTO Y LIMPIAR MEMORIA
+                # --- PASO 3: ENVÍO ÚNICO MASIVO ---
+                supabase.table("seguimiento").upsert(registros_a_subir, on_conflict="producto_id, hito").execute()
+
+            # 4. ACTUALIZAR PROYECTO Y LIMPIAR
             supabase.table("proyectos").update({"avance": p_tot}).eq("id", id_p).execute()
-            try:
-                supabase.table("cierres_diarios").insert({"proyecto_id": id_p, "fecha": f_hoy, "hora": ahora.strftime("%H:%M:%S")}).execute()
-            except:
-                pass
+            st.session_state.cambios_pendientes = [] # Limpiar memoria temporal
             
-            # Vaciamos la lista de pendientes para la siguiente tanda
-            st.session_state.cambios_pendientes = []
-            
-            st.success(f"✅ Avance guardado y etapas previas autocompletadas.")
+            st.success(f"✅ Avance y etapas previas guardadas correctamente.")
             st.rerun()
             
         except Exception as e:
             st.error(f"Error al procesar el guardado: {e}")
+            
     # --- MATRIZ CON STICKY HEADER ---
     st.markdown('<div class="sticky-top">', unsafe_allow_html=True)
     cols_h = st.columns([2.5] + [0.7]*8 + [1.5])
