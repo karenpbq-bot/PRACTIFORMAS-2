@@ -31,10 +31,17 @@ def mostrar():
             ubi = c3.text_input("Ubicación", placeholder="Ej: B101")
             
             c4, c5, c6, c7 = st.columns(4)
-            veta = c4.selectbox("Veta", ["SI", "NO"])
-            nveta = c5.text_input("No Veta")
+            # 1. Veta: Ahora es un campo numérico para dimensiones
+            veta = c4.number_input("Veta (Dimensión)", min_value=0, value=0, help="Ingrese la medida en mm")
+            
+            # 2. No Veta: Ahora es un campo numérico para dimensiones
+            nveta = c5.number_input("No Veta (Dimensión)", min_value=0, value=0, help="Ingrese la medida en mm")
+            
+            # 3. Material permanece igual
             material = c6.text_input("Material / Color")
-            rot = c7.selectbox("Rotación", ["0°", "90°", "180°", "270°"])
+            
+            # 4. Rotación: Ahora es elegir entre 1 y 0
+            rot = c7.selectbox("Rotación", [0, 1], help="0: Sin rotación, 1: Con rotación")
             
             st.write("**Tapacantos**")
             t1, t2, t3, t4 = st.columns(4)
