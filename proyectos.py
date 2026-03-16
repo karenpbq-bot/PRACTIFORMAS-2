@@ -26,6 +26,7 @@ def mostrar():
             f_ini = c1.date_input("Fecha Inicio Global", value=date.today())
             f_fin = c2.date_input("Fecha Término Global", value=date.today() + timedelta(days=30))
 
+        # 2. PONDERACIÓN DE ETAPAS
         st.write("### ⚖️ Distribución de Tiempo por Etapa (%)")
         etapas_nombres = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
         defaults = [15, 40, 10, 25, 10]
@@ -48,49 +49,54 @@ def mostrar():
                 dias_etapa = round(dias_totales * (pcts[et] / 100))
                 f_f = fecha_aux + timedelta(days=max(0, dias_etapa - 1))
                 cronograma_data.append({
-                    "Etapa": et, "Inicio": fecha_aux, "Fin": f_f, "Días": dias_etapa
-            })
-            fecha_aux = f_f + timedelta(days=1)
+                    "Etapa": et, 
+                    "Inicio": fecha_aux, 
+                    "Fin": f_f, 
+                    "Días": dias_etapa
+                })
+                fecha_aux = f_f + timedelta(days=1)
 
-        # RENDERIZADO DE PREVISUALIZACIÓN
-        df_previs = pd.DataFrame(cronograma_data)
-        df_previs["Inicio"] = df_previs["Inicio"].apply(lambda x: x.strftime("%d/%m/%Y"))
-        df_previs["Fin"] = df_previs["Fin"].apply(lambda x: x.strftime("%d/%m/%Y"))
-        st.write("#### 🔍 Previsualización del Cronograma Planificado")
-        st.table(df_previs[["Etapa", "Inicio", "Fin", "Días"]])
+            # RENDERIZADO DE PREVISUALIZACIÓN
+            df_previs = pd.DataFrame(cronograma_data)
+            # Formateamos solo para la tabla visual
+            df_visual = df_previs.copy()
+            df_visual["Inicio"] = df_visual["Inicio"].apply(lambda x: x.strftime("%d/%m/%Y"))
+            df_visual["Fin"] = df_visual["Fin"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
-        # 4. BOTÓN DE REGISTRO
-        if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
-            if not codigo or not nombre:
-                st.warning("El Código y Nombre son obligatorios.")
-            elif sum(pcts.values()) != 100:
-                st.error(f"La suma de porcentajes debe ser 100% (Actual: {sum(pcts.values())}%)")
-            else:
-                # Preparamos el diccionario para Supabase incluyendo las fechas calculadas
-                datos_nube = {
-                    "codigo": codigo,
-                    "proyecto_text": nombre,
-                    "cliente": cliente,
-                    "partida": par,
-                    "f_ini": str(f_ini),
-                    "f_fin": str(f_fin),
-                    "supervisor_id": dict_sups[sup_nom],
-                    "estatus": "Activo",
-                    "avance": 0,
-                    # Mapeo de fechas calculadas a las columnas de la DB
-                    "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
-                    "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
-                    "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
-                    "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
-                    "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
-                }
+            st.write("#### 🔍 Previsualización del Cronograma Planificado")
+            st.table(df_visual[["Etapa", "Inicio", "Fin", "Días"]])
+
+            # 4. BOTÓN DE REGISTRO (Dentro del else para asegurar que existan las fechas)
+            if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
+                if not codigo or not nombre:
+                    st.warning("El Código y Nombre son obligatorios.")
+                elif sum(pcts.values()) != 100:
+                    st.error(f"La suma de porcentajes debe ser 100% (Actual: {sum(pcts.values())}%)")
+                else:
+                    datos_nube = {
+                        "codigo": codigo,
+                        "proyecto_text": nombre,
+                        "cliente": cliente,
+                        "partida": par,
+                        "f_ini": str(f_ini),
+                        "f_fin": str(f_fin),
+                        "supervisor_id": dict_sups[sup_nom],
+                        "estatus": "Activo",
+                        "avance": 0,
+                        "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
+                        "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
+                        "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
+                        "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
+                        "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
+                    }
                     
-                try:
-                    conectar().table("proyectos").insert(datos_nube).execute()
-                    st.success(f"✅ Proyecto {codigo} registrado con cronograma automático.")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Error al guardar en nube: {e}")
+                    try:
+                        conectar().table("proyectos").insert(datos_nube).execute()
+                        st.success(f"✅ Proyecto {codigo} registrado con cronograma automático.")
+                        st.balloons()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar en nube: {e}")
 
     with tab2:
         st.subheader("Listado Maestro")
