@@ -58,38 +58,39 @@ def mostrar():
         df_previs["Fin"] = df_previs["Fin"].apply(lambda x: x.strftime("%d/%m/%Y"))
         st.write("#### 🔍 Previsualización del Cronograma Planificado")
         st.table(df_previs[["Etapa", "Inicio", "Fin", "Días"]])
-            # 4. BOTÓN DE REGISTRO
-            if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
-                if not codigo or not nombre:
-                    st.warning("El Código y Nombre son obligatorios.")
-                elif sum(pcts.values()) != 100:
-                    st.error(f"La suma de porcentajes debe ser 100% (Actual: {sum(pcts.values())}%)")
-                else:
-                    # Preparamos el diccionario para Supabase incluyendo las fechas calculadas
-                    datos_nube = {
-                        "codigo": codigo,
-                        "proyecto_text": nombre,
-                        "cliente": cliente,
-                        "partida": par,
-                        "f_ini": str(f_ini),
-                        "f_fin": str(f_fin),
-                        "supervisor_id": dict_sups[sup_nom],
-                        "estatus": "Activo",
-                        "avance": 0,
-                        # Mapeo de fechas calculadas a las columnas de la DB
-                        "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
-                        "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
-                        "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
-                        "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
-                        "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
-                    }
+            
+        # 4. BOTÓN DE REGISTRO
+        if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
+            if not codigo or not nombre:
+                st.warning("El Código y Nombre son obligatorios.")
+            elif sum(pcts.values()) != 100:
+                st.error(f"La suma de porcentajes debe ser 100% (Actual: {sum(pcts.values())}%)")
+            else:
+                # Preparamos el diccionario para Supabase incluyendo las fechas calculadas
+                datos_nube = {
+                    "codigo": codigo,
+                    "proyecto_text": nombre,
+                    "cliente": cliente,
+                    "partida": par,
+                    "f_ini": str(f_ini),
+                    "f_fin": str(f_fin),
+                    "supervisor_id": dict_sups[sup_nom],
+                    "estatus": "Activo",
+                    "avance": 0,
+                    # Mapeo de fechas calculadas a las columnas de la DB
+                    "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
+                    "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
+                    "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
+                    "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
+                    "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
+                }
                     
-                    try:
-                        conectar().table("proyectos").insert(datos_nube).execute()
-                        st.success(f"✅ Proyecto {codigo} registrado con cronograma automático.")
-                        st.balloons()
-                    except Exception as e:
-                        st.error(f"Error al guardar en nube: {e}")
+                try:
+                    conectar().table("proyectos").insert(datos_nube).execute()
+                    st.success(f"✅ Proyecto {codigo} registrado con cronograma automático.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Error al guardar en nube: {e}")
 
     with tab2:
         st.subheader("Listado Maestro")
