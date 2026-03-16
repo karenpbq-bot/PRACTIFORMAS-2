@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 from base_datos import conectar, obtener_proyectos, obtener_gantt_real_data
 
 # =========================================================
-# 1. CONFIGURACIÓN Y CONSTANTES (ESQUELETO INAMOVIBLE)
+# 1. CONFIGURACIÓN Y CONSTANTES
 # =========================================================
 ORDEN_ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
 
 def obtener_color_semaforo(avance):
-    """Calcula el color matizado según el % de avance del proyecto."""
+    """Calcula el color matizado según el % de avance global."""
     avance = max(0, min(100, avance))
     if avance < 50:
         val = int(100 + (avance * 2.5))
@@ -32,19 +32,24 @@ def mostrar():
         solo_real = st.toggle("Ocultar Planificación (Celeste)", value=False)
     
     with st.container(border=True):
-        bus = st.text_input("🔍 Localizador de Proyectos", placeholder="Código, Cliente o Nombre...")
+        bus = st.text_input("🔍 Localizador de Proyectos", placeholder="Código, Cliente o Nombre...", key="bus_ejec")
         df_p = obtener_proyectos(bus)
+        
         if df_p.empty:
             st.info("No se encontraron coincidencias."); return
+            
         dict_proy = {f"{r['proyecto_text']} — {r['cliente']}": r['id'] for _, r in df_p.iterrows()}
         
-    proyectos_sel = st.multiselect("Proyectos a Auditar:", options=list(dict_proy.keys()), default=list(dict_proy.keys())[:1])
+    proyectos_sel = st.multiselect("Proyectos a Auditar:", 
+                                    options=list(dict_proy.keys()), 
+                                    default=list(dict_proy.keys())[:1])
 
     if proyectos_sel:
-        # --- NUEVAS PESTAÑAS ---
+        # Pestañas Superiores
         tab_gantt, tab_metricas = st.tabs(["📊 Cronograma Gantt", "📈 Métricas"])
         
         data_final = []
+        
         for p_nom in proyectos_sel:
             id_p = dict_proy[p_nom]
             res_p = supabase.table("proyectos").select("*").eq("id", id_p).execute()
@@ -54,18 +59,29 @@ def mostrar():
             avance_p = float(p_data.get('avance', 0))
             color_real = obtener_color_semaforo(avance_p)
 
-            # A. Esqueleto
+            # A. Esqueleto (Para asegurar que siempre aparezcan las 5 filas)
             for etapa_fija in ORDEN_ETAPAS:
                 data_final.append(dict(Proyecto=p_nom, Etapa=etapa_fija, Inicio=datetime.now(), Fin=datetime.now(), Color="rgba(0,0,0,0)", Tipo="3_Esqueleto"))
 
-            # B. Planificado
+            # B. Data Planificada (BARRAS CELESTES)
             if not solo_real:
-                map_cols = [("Diseño", 'p_dis_i', 'p_dis_f'), ("Fabricación", 'p_fab_i', 'p_fab_f'), ("Traslado", 'p_tra_i', 'p_tra_f'), ("Instalación", 'p_ins_i', 'p_ins_f'), ("Entrega", 'p_ent_i', 'p_ent_f')]
+                c_plan = "#87CEEB"
+                map_cols = [
+                    ("Diseño", 'p_dis_i', 'p_dis_f'),
+                    ("Fabricación", 'p_fab_i', 'p_fab_f'),
+                    ("Traslado", 'p_tra_i', 'p_tra_f'),
+                    ("Instalación", 'p_ins_i', 'p_ins_f'),
+                    ("Entrega", 'p_ent_i', 'p_ent_f')
+                ]
                 for et, i_c, f_c in map_cols:
                     if p_data.get(i_c) and p_data.get(f_c):
-                        data_final.append(dict(Proyecto=p_nom, Etapa=et, Inicio=p_data[i_c], Fin=p_data[f_c], Color="#87CEEB", Tipo="1_Planificado"))
+                        data_final.append(dict(
+                            Proyecto=p_nom, Etapa=et, 
+                            Inicio=p_data[i_c], Fin=p_data[f_c], 
+                            Color=c_plan, Tipo="1_Planificado"
+                        ))
             
-            # C. Real (Corregido para tus hitos específicos)
+            # C. Data Real (BARRAS DE AVANCE)
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
@@ -73,7 +89,7 @@ def mostrar():
                         str_f = str(row['fecha']).strip()
                         f_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else pd.to_datetime(str_f)
                         h_l = row['hito'].lower()
-                        # Lógica de agrupación de hitos en las 5 etapas del Gantt
+                        
                         if "diseñ" in h_l: et_m = "Diseño"
                         elif any(x in h_l for x in ["fabric", "corte", "armad"]): et_m = "Fabricación"
                         elif any(x in h_l for x in ["obra", "ubicaci", "traslad"]): et_m = "Traslado"
@@ -81,83 +97,56 @@ def mostrar():
                         elif any(x in h_l for x in ["revis", "observ", "entreg"]): et_m = "Entrega"
                         else: continue
                         
-                        data_final.append(dict(Proyecto=p_nom, Etapa=et_m, Inicio=f_dt.strftime('%Y-%m-%d'), Fin=(f_dt + timedelta(days=2)).strftime('%Y-%m-%d'), Color=color_real, Tipo="2_Real"))
+                        data_final.append(dict(
+                            Proyecto=p_nom, Etapa=et_m, Inicio=f_dt.strftime('%Y-%m-%d'), 
+                            Fin=(f_dt + timedelta(days=2)).strftime('%Y-%m-%d'), 
+                            Color=color_real, Tipo="2_Real"
+                        ))
                     except: continue
 
+        # --- D. RENDERIZADO EN PESTAÑAS ---
         with tab_gantt:
             if data_final:
                 df_fig = pd.DataFrame(data_final)
-                df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-                df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
-                fig = px.timeline(df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color", facet_col="Proyecto", facet_col_wrap=1, color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS})
+                df_fig['Inicio'] = pd.to_datetime(df_fig['Inicio'], errors='coerce')
+                df_fig['Fin'] = pd.to_datetime(df_fig['Fin'], errors='coerce')
+                df_fig = df_fig.dropna(subset=['Inicio', 'Fin'])
                 
-                # Eje X: 4 meses fijos
-                f_plan = pd.to_datetime(df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio'])
-                f_min_x = f_plan.min() if not f_plan.empty else pd.Timestamp.now()
+                df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
+                # Orden ASCENDENTE + autorange REVERSED = Diseño arriba
+                df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
+                
+                fig = px.timeline(
+                    df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
+                    facet_col="Proyecto", facet_col_wrap=1,
+                    color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS}
+                )
+
+                # Ajuste escala 4 meses fija
+                f_plan_ref = df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio']
+                f_min_x = f_plan_ref.min() if not f_plan_ref.empty else pd.Timestamp.now()
                 fig.update_xaxes(range=[f_min_x - timedelta(days=2), f_min_x + timedelta(days=120)], dtick="M1", tickformat="%b %Y", showgrid=True)
                 
                 fig.update_yaxes(autorange="reversed", showgrid=True)
                 fig.update_layout(barmode='group', bargap=0.5, height=250 * len(proyectos_sel), margin=dict(l=10, r=10, t=50, b=10), showlegend=False)
                 fig.update_traces(marker_line_width=0, opacity=0.9)
                 fig.add_vline(x=pd.Timestamp.now().timestamp() * 1000, line_width=1.5, line_dash="dash", line_color="red")
+                
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("No hay datos suficientes para generar el Gantt.")
 
         with tab_metricas:
             from base_datos import obtener_avance_por_hitos
             for p_nom in proyectos_sel:
                 id_p = dict_proy[p_nom]
-                st.subheader(f"📈 Porcentajes de Avance: {p_nom}")
+                st.subheader(f"📈 Desglose: {p_nom}")
                 avances = obtener_avance_por_hitos(id_p)
                 if avances:
                     m = st.columns(4)
-                    for idx, (hito, valor) in enumerate(avances.items()):
+                    hit_items = list(avances.items())
+                    for idx, (h, v) in enumerate(hit_items):
                         with m[idx % 4]:
-                            st.metric(hito, f"{valor}%")
-                            st.progress(valor / 100)
+                            st.metric(h, f"{v}%")
+                            st.progress(v / 100)
                 st.divider()
-
-       # --- D. GENERACIÓN DEL GRÁFICO (CORRECCIÓN DE ORDEN) ---
-        if not data_final:
-            st.warning("No hay datos para mostrar."); return
-
-        df_fig = pd.DataFrame(data_final)
-        
-        # 1. Definimos el orden categórico
-        df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        
-        # 2. ORDEN CLAVE: Para que Diseño sea el primero ARRIBA en el gráfico, 
-        # Plotly necesita que sea el ÚLTIMO en el DataFrame si no usamos reversed,
-        # o el PRIMERO si ordenamos de forma ascendente y quitamos reversed.
-        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
-        
-        fig = px.timeline(
-            df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
-            facet_col="Proyecto", facet_col_wrap=1,
-            color_discrete_map="identity",
-            category_orders={"Etapa": ORDEN_ETAPAS[::-1]} # <--- Invertimos la categoría aquí
-        )
-
-        # 3. CONFIGURACIÓN DE EJES (Sin autorange reversed para evitar conflictos)
-        fig.update_yaxes(
-            autorange=True,      # <--- Cambiado de "reversed" a True
-            showgrid=True, 
-            gridcolor='rgba(128,128,128,0.1)',
-            fixedrange=True
-        )
-
-        # 4. COMPACTACIÓN Y DISEÑO
-        fig.update_layout(
-            barmode='group',
-            bargap=0.4,           
-            bargroupgap=0.1,      
-            height=200 + (150 * len(proyectos_sel)), # Altura dinámica más eficiente
-            margin=dict(l=10, r=10, t=40, b=10),
-            showlegend=False
-        )
-
-        fig.update_traces(marker_line_width=0, opacity=0.85)
-
-        # Línea de tiempo "Hoy"
-        fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=1.5, line_dash="solid", line_color="red")
-
-        st.plotly_chart(fig, use_container_width=True)
