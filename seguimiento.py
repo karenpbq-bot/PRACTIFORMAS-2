@@ -189,9 +189,14 @@ def mostrar(supervisor_id=None):
     for i, h in enumerate(HITOS_LIST):
         with cols_h[i+1]:
             st.write(MAPEO_HITOS[h])
+            # CORRECCIÓN: Marcado masivo ágil usando la memoria temporal
             if st.button("✅", key=f"bk_{h}"):
-                for pid in df_f['id'].tolist(): registrar_hitos_cascada(pid, h, f_reg.strftime("%d/%m/%Y"))
-                st.rerun()
+                for pid in df_f['id'].tolist():
+                    # Solo agregamos si no estaba ya marcado en la base de datos
+                    m_db = segs[(segs['producto_id'] == pid) & (segs['hito'] == h)]
+                    if m_db.empty:
+                        st.session_state.cambios_pendientes.append({"pid": pid, "hito": h})
+                st.rerun() # Aquí sí usamos rerun para que el usuario vea los checks marcados de inmediato
     cols_h[-1].write("**Notas**")
     st.markdown('</div>', unsafe_allow_html=True)
 
