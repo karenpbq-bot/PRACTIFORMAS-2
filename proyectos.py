@@ -126,60 +126,59 @@ def mostrar():
     
     with tab3:
         if st.session_state.id_p_sel:
-            st.subheader("📦 Gestión de Matriz y Metrados")
+            st.subheader("📦 Matriz de Productos")
             
-            col_m, col_i = st.columns(2)
-            
-            with col_m:
-                with st.expander("➕ Carga Manual"):
-                    with st.form("fm_manual", clear_on_submit=True):
-                        u = st.text_input("Ubicación")
-                        t = st.text_input("Tipo")
-                        c = st.number_input("Cantidad", min_value=1, step=1)
-                        m = st.number_input("ML", min_value=0.0)
-                        if st.form_submit_button("Añadir Item"):
-                            conectar().table("productos").insert({"proyecto_id": st.session_state.id_p_sel, "ubicacion": u, "tipo": t, "ctd": c, "ml": m}).execute()
-                            st.rerun()
-
-            with col_i:
-                with st.expander("📥 Importar Excel (Eliza)"):
-                    f_up = st.file_uploader("Subir archivo .xlsx", type=["xlsx"])
-                    if f_up and st.button("🚀 Procesar Metrado"):
-                        df_ex = pd.read_excel(f_up)
-                        # Mapeo exacto a las columnas del archivo de Eliza
-                        for _, r in df_ex.iterrows():
+            # --- 1. SECCIÓN: CARGA MANUAL (EN UNA SOLA FILA) ---
+            with st.container(border=True):
+                st.markdown("**➕ Agregar Ítem Individual**")
+                with st.form("form_fila_unica", clear_on_submit=True):
+                    # Creamos 4 columnas para que los campos estén uno al lado del otro
+                    c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+                    u = c1.text_input("Ubicación", placeholder="Ej: 101")
+                    t = c2.text_input("Tipo", placeholder="Ej: Closet")
+                    c = c3.number_input("Cant.", min_value=1, step=1)
+                    m = c4.number_input("ML", min_value=0.0, format="%.2f")
+                    
+                    # El botón de formulario para procesar la fila
+                    if st.form_submit_button("Añadir Producto"):
+                        if u and t:
                             conectar().table("productos").insert({
                                 "proyecto_id": st.session_state.id_p_sel,
-                                "ubicacion": str(r['UBICACION']),
-                                "tipo": str(r['TIPO']),
-                                "ctd": int(r['CTD']),
-                                "ml": float(r['Medidas (ml)'])
+                                "ubicacion": u, "tipo": t, "ctd": c, "ml": m
                             }).execute()
-                        st.success("¡Matriz cargada!"); st.rerun()
+                            st.success("Ítem añadido"); st.rerun()
+                        else:
+                            st.warning("Ubicación y Tipo son obligatorios.")
 
-            # --- SECCIÓN DE VISUALIZACIÓN PROTEGIDA ---
+            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (DEBAJO) ---
+            with st.expander("📥 Importar Lista de Productos (Excel/CSV)"):
+                st.info("Asegúrate de que el archivo tenga las columnas: UBICACION, TIPO, CTD, Medidas (ml)")
+                f_up = st.file_uploader("Seleccionar archivo", type=["xlsx", "csv"], key="uploader_matriz")
+                
+                if f_up and st.button("🚀 Iniciar Importación Masiva"):
+                    df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
+                    # Procesamiento del archivo
+                    for _, r in df_ex.iterrows():
+                        conectar().table("productos").insert({
+                            "proyecto_id": st.session_state.id_p_sel,
+                            "ubicacion": str(r['UBICACION']),
+                            "tipo": str(r['TIPO']),
+                            "ctd": int(r['CTD']),
+                            "ml": float(r['Medidas (ml)'])
+                        }).execute()
+                    st.success("¡Lista importada con éxito!"); st.rerun()
+
+            # --- 3. SECCIÓN: VISUALIZACIÓN DE LA MATRIZ ---
             st.divider()
-            res_matriz = conectar().table("productos").select("*").eq("proyecto_id", st.session_state.id_p_sel).execute()
-            
-            if res_matriz.data:
-                df_matriz = pd.DataFrame(res_matriz.data)
+            res_p = conectar().table("productos").select("*").eq("proyecto_id", st.session_state.id_p_sel).execute()
+            if res_p.data:
+                df_matriz = pd.DataFrame(res_p.data)
+                # Selector de columnas seguro (evita KeyError)
+                cols_vis = [c for c in ['ubicacion', 'tipo', 'ctd', 'ml'] if c in df_matriz.columns]
+                st.dataframe(df_matriz[cols_vis], hide_index=True, use_container_width=True)
                 
-                # Definimos las columnas que QUEREMOS mostrar
-                columnas_deseadas = ['ubicacion', 'tipo', 'ctd', 'ml']
-                
-                # Verificamos cuáles de esas columnas REALMENTE existen en el DataFrame
-                columnas_existentes = [col for col in columnas_deseadas if col in df_matriz.columns]
-                
-                if columnas_existentes:
-                    st.dataframe(df_matriz[columnas_existentes], hide_index=True, use_container_width=True)
-                else:
-                    # Si no encuentra ninguna, muestra todo para que veas qué nombres tienen
-                    st.write("Contenido de la matriz:")
-                    st.dataframe(df_matriz, hide_index=True)
-                
-                if st.button("🗑️ Vaciar Matriz Actual", type="primary"):
+                if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
                     conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
                     st.rerun()
-            else:
-                st.info("La matriz está vacía. Carga la lista de prodtcos en Excel o agrega ítems manualmente.")
-
+        else:
+            st.info("⚠️ Selecciona un proyecto en la pestaña 'Listado y Búsqueda' para gestionar su matriz.")
