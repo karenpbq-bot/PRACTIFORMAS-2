@@ -82,83 +82,74 @@ def mostrar():
                             Fin=p_data[f_c], Color=c_plan, Tipo="1_Planificado"
                         ))
             
-            # --- C. DATA REAL (EJECUTADO - BLOQUE INFERIOR) ---
+            # --- C. DATA REAL (MAPEADO EXACTO DE HITOS) ---
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
                     try:
                         str_f = str(row['fecha']).strip()
-                        fecha_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else datetime.strptime(str_f, '%Y-%m-%d')
+                        # Conversión flexible de fecha
+                        if "/" in str_f:
+                            fecha_dt = datetime.strptime(str_f, '%d/%m/%Y')
+                        else:
+                            fecha_dt = pd.to_datetime(str_f)
                         
                         hito_l = row['hito'].lower()
-                        if "disen" in hito_l: et_m = "Diseño"
-                        elif any(x in hito_l for x in ["fabric", "corte", "armad"]): et_m = "Fabricación"
-                        elif "tras" in hito_l or "obra" in hito_l: et_m = "Traslado"
-                        elif "entreg" in hito_l: et_m = "Entrega"
-                        else: et_m = "Instalación"
+                        
+                        # MAPEADO SEGÚN TU ESTRUCTURA:
+                        if "diseñ" in hito_l: 
+                            et_m = "Diseño"
+                        elif any(x in hito_l for x in ["fabric", "corte", "armad"]): 
+                            et_m = "Fabricación"
+                        elif any(x in hito_l for x in ["obra", "ubicaci", "traslad"]): 
+                            et_m = "Traslado"
+                        elif any(x in hito_l for x in ["estruc", "puer", "frent", "instal"]): 
+                            et_m = "Instalación"
+                        elif any(x in hito_l for x in ["revis", "observ", "entreg"]): 
+                            et_m = "Entrega"
+                        else:
+                            continue # Si no coincide, no graficamos basura
                         
                         data_final.append(dict(
-                            Proyecto=p_nom, Etapa=et_m, Inicio=fecha_dt.strftime('%Y-%m-%d'), 
+                            Proyecto=p_nom, 
+                            Etapa=et_m, 
+                            Inicio=fecha_dt.strftime('%Y-%m-%d'), 
+                            # Le damos 2 días de ancho para que el hito sea visible como barra
                             Fin=(fecha_dt + timedelta(days=2)).strftime('%Y-%m-%d'), 
-                            Color=color_real, Tipo="2_Real"
+                            Color=color_real, 
+                            Tipo="2_Real"
                         ))
-                    except: continue
-
-       # --- D. GENERACIÓN DEL GRÁFICO (ORDEN Y ESCALA DEFINITIVA) ---
-        if not data_final:
-            st.warning("No hay datos para mostrar."); return
-
+                    except: 
+                        continue
+      # --- D. GENERACIÓN DEL GRÁFICO (ORDEN Y ESCALA) ---
         df_fig = pd.DataFrame(data_final)
-        
-        # 1. ORDENAMIENTO DE DATOS: 
-        # Para que Diseño esté ARRIBA, en un eje normal (no reversed)
-        # debe ser la categoría con mayor índice o el DataFrame debe estar invertido.
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        # Ordenamos de forma descendente [False] para la Etapa
-        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
+        
+        # Ordenamos ASCENDENTE para que el primero (Diseño) se dibuje arriba con autorange reversed
+        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
         
         fig = px.timeline(
-            df_fig, 
-            x_start="Inicio", 
-            x_end="Fin", 
-            y="Etapa", 
-            color="Color",
-            facet_col="Proyecto", 
-            facet_col_wrap=1,
+            df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
+            facet_col="Proyecto", facet_col_wrap=1,
             color_discrete_map="identity",
-            # Aquí le damos el orden exacto de aparición visual de arriba hacia abajo
-            category_orders={"Etapa": ORDEN_ETAPAS} 
+            category_orders={"Etapa": ORDEN_ETAPAS}
         )
 
-        # 2. CONFIGURACIÓN EJES X (FIJAR 4 MESES)
-        f_val = pd.to_datetime(df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio'])
-        f_min_x = f_val.min() if not f_val.empty else datetime.now()
+        # FIJAR ESCALA 4 MESES
+        f_plan = pd.to_datetime(df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio'])
+        f_min_x = f_plan.min() if not f_plan.empty else datetime.now()
         
         fig.update_xaxes(
-            range=[f_min_x - timedelta(days=5), f_min_x + timedelta(days=120)],
-            dtick="M1", 
-            tickformat="%b %Y", 
-            showgrid=True, 
-            gridcolor='rgba(128,128,128,0.2)'
+            range=[f_min_x - timedelta(days=2), f_min_x + timedelta(days=120)],
+            dtick="M1", tickformat="%b %Y", showgrid=True
         )
 
-        # 3. CONFIGURACIÓN EJE Y (QUITAMOS REVERSED)
-        fig.update_yaxes(
-            autorange=True, # <--- Cambiado a True para que respete category_orders
-            showgrid=True, 
-            gridcolor='rgba(128,128,128,0.1)'
-        )
+        # ORDEN DE ARRIBA HACIA ABAJO
+        fig.update_yaxes(autorange="reversed", showgrid=True)
 
-        # 4. DISEÑO FINAL
         fig.update_layout(
             barmode='group',
             bargap=0.5,
-            height=200 + (150 * len(proyectos_sel)), 
-            margin=dict(l=10, r=10, t=40, b=10),
+            height=200 + (150 * len(proyectos_sel)),
             showlegend=False
         )
-
-        fig.update_traces(marker_line_width=0, opacity=0.9)
-        fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=1.5, line_dash="dash", line_color="red")
-
-        st.plotly_chart(fig, use_container_width=True)
