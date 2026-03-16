@@ -151,13 +151,13 @@ def mostrar(supervisor_id=None):
                         if segs[(segs['producto_id'] == pid) & (segs['hito'] == HITOS_LIST[i])].empty:
                             lote_save.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
             
+            # Dentro de if act4.button("💾 Guardar Avance"):
             if lote_save:
                 supabase.table("seguimiento").upsert(lote_save, on_conflict="producto_id, hito").execute()
-            
-            # AGREGAR ESTA LÍNEA AQUÍ:
+
             from base_datos import sincronizar_avances_etapas
-            sincronizar_avances_etapas(id_p)
-            st.success("✅ Avances consolidados correctamente.")
+            sincronizar_avances_etapas(id_p) # <--- AQUÍ SE CREAN LOS DATOS PARA EL GANTT
+            st.success("✅ Seguimiento guardado y métricas actualizadas.")
         except Exception as e: st.error(f"Error: {e}")
 
     if act5.button("🗑️ Descartar", type="secondary", use_container_width=True, key="btn_des_final"):
