@@ -4,36 +4,39 @@ import plotly.graph_objects as go
 from datetime import datetime
 from base_datos import conectar, obtener_proyectos, obtener_datos_gantt_procesados
 
-def obtener_color_gerencial(avance):
-    """Semáforo matizado: Rojo (<50), Amarillo (50-75), Verde (>75)."""
+# --- 1. LÓGICA DE COLOR MATIZADO (PRECISIÓN GERENCIAL) ---
+def obtener_color_estricto(avance):
+    """Semáforo matizado: El color dicta la salud de la etapa."""
     if avance < 50:
-        return f'rgb({int(160 + avance)}, 60, 60)'
+        return f'rgb({int(160 + avance)}, 60, 60)' # Rojo
     elif avance <= 75:
-        return f'rgb({int(210 + (avance-50)*1.5)}, {int(190 + (avance-50)*1.5)}, 0)'
+        return f'rgb({int(200 + (avance-50)*2)}, {int(180 + (avance-50)*2)}, 0)' # Amarillo
     else:
-        return f'rgb(34, {int(110 + (avance-75)*4)}, 34)'
+        return f'rgb(34, {int(100 + (avance-75)*4)}, 34)' # Verde
 
 def mostrar():
-    st.title("📊 Tablero de Control: Planificado vs. Ejecutado")
+    st.title("📊 Control Contractual: Planificado vs. Ejecutado")
     
-    # --- 1. FILTROS Y BÚSQUEDA ---
+    # --- 2. FILTROS ESTRATÉGICOS (Mantenidos y Optimizados) ---
     with st.sidebar:
         st.subheader("🔍 Localizador de Proyectos")
-        bus = st.text_input("Buscador Universal", placeholder="Código, Cliente, Nombre...")
+        bus = st.text_input("Buscador (Código, Cliente, Nombre)")
         df_p = obtener_proyectos(bus)
         
         if df_p.empty:
-            st.warning("No se encontraron coincidencias."); return
+            st.warning("No hay coincidencias."); return
 
-        proyectos_selec = st.multiselect("Proyectos a Auditar:", df_p['proyecto_display'].tolist())
+        proyectos_selec = st.multiselect("Seleccionar Proyectos:", df_p['proyecto_display'].tolist())
+        
+        st.divider()
+        st.caption("Visualización: Mes a Mes | Quincenas Punteadas")
 
     if not proyectos_selec:
-        st.info("💡 Seleccione proyectos en el buscador para visualizar el cronograma."); return
+        st.info("💡 Seleccione proyectos para visualizar el cumplimiento de contratos."); return
 
-    # --- 2. CONFIGURACIÓN DEL GRÁFICO ---
+    # --- 3. ARQUITECTURA DEL GANTT (ESTRUCTURA DE BLOQUES SEPARADOS) ---
     ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
-    # Invertimos para que Diseño aparezca al principio (arriba)
-    ETAPAS_INV = ETAPAS[::-1] 
+    ETAPAS_INV = ETAPAS[::-1] # Diseño arriba
     
     fig = go.Figure()
     supabase = conectar()
@@ -42,19 +45,23 @@ def mostrar():
         p_row = df_p[df_p['proyecto_display'] == p_display].iloc[0]
         id_p = p_row['id']
         
-        # Datos del Proyecto (Planificado)
+        # A. Datos Planificados (Compromiso Contractual)
         res_p = supabase.table("proyectos").select("*").eq("id", id_p).execute()
-        if not res_p.data: continue
-        p_data = res_p.data[0]
+        p_data = res_p.data[0] if res_p.data else {}
 
-        # Datos de Seguimiento (Ejecutado)
+        # B. Datos Ejecutados (Realidad Ponderada del Seguimiento)
         datos_reales = obtener_datos_gantt_procesados(id_p)
         dict_reales = {d['Etapa']: d for d in datos_reales}
 
-        # --- A. BLOQUE PLANIFICADO (Superior) ---
+        # --- DIBUJO POR BLOQUES INDEPENDIENTES (NO ENTRELAZADOS) ---
+        # Cada proyecto ocupa 20 unidades en el eje Y.
+        # Bloque Planificado: posiciones 11 a 15.
+        # Bloque Ejecutado: posiciones 0 a 4.
+        # Espacio de aire: posiciones 5 a 10.
+        
         for y_idx, etapa in enumerate(ETAPAS_INV):
-            # Posición en el eje Y: Desplazada hacia arriba para el bloque Planificado
-            pos_y_plan = (i * 15) + (y_idx + 6) 
+            # 🏢 BLOQUE PLANIFICADO (Superior - Gris)
+            pos_y_plan = (i * 20) + (y_idx + 12) 
             
             f_map = {
                 "Diseño": ("p_dis_i", "p_dis_f"), "Fabricación": ("p_fab_i", "p_fab_f"),
@@ -64,6 +71,7 @@ def mostrar():
             fi, ff = f_map[etapa]
             
             if p_data.get(fi) and p_data.get(ff):
+                # Fabricación en Gris Oscuro, resto Gris Claro
                 c_plan = "#4F4F4F" if etapa == "Fabricación" else "#D3D3D3"
                 fig.add_trace(go.Bar(
                     base=[p_data[fi]],
@@ -71,17 +79,14 @@ def mostrar():
                     y=[pos_y_plan],
                     orientation='h',
                     marker_color=c_plan,
-                    name=f"PLAN: {etapa}",
+                    name=f"Plan: {etapa}",
                     hoverinfo="text",
                     hovertext=f"PLANIFICADO: {etapa}<br>{p_data[fi]} al {p_data[ff]}",
                     width=0.8
                 ))
 
-        # --- B. BLOQUE EJECUTADO (Inferior, justo debajo del anterior) ---
-        for y_idx, etapa in enumerate(ETAPAS_INV):
-            # Posición en el eje Y: Justo debajo de las barras grises
-            pos_y_real = (i * 15) + (y_idx)
-
+            # 🛠️ BLOQUE EJECUTADO (Inferior - Debajo del bloque gris)
+            pos_y_real = (i * 20) + y_idx
             if etapa in dict_reales:
                 dr = dict_reales[etapa]
                 av = round(dr['Avance'], 1)
@@ -90,45 +95,48 @@ def mostrar():
                     x=[(dr['Fin'] - dr['Inicio']).days + 1],
                     y=[pos_y_real],
                     orientation='h',
-                    marker_color=obtener_color_gerencial(av),
-                    text=f"<b>{av}%</b>",
+                    marker_color=obtener_color_estricto(av),
+                    text=f"<b>{av}%</b>", # Solo el % de avance solicitado
                     textposition="inside",
                     textfont=dict(color="white", size=11),
-                    name=f"REAL: {etapa}",
                     hoverinfo="text",
-                    hovertext=f"EJECUTADO REAL: {etapa}<br>Avance: {av}%<br>{dr['Inicio'].date()} al {dr['Fin'].date()}",
+                    hovertext=f"REAL: {etapa}<br>Avance: {av}%<br>{dr['Inicio'].date()} al {dr['Fin'].date()}",
                     width=0.8
                 ))
 
-    # --- 3. DISEÑO DE ESCALA Y EJES ---
+    # --- 4. DISEÑO DE EJES Y ESCALA TEMPORAL (MES A MES) ---
     fig.update_layout(
         barmode='overlay',
         showlegend=False,
         plot_bgcolor="white",
-        height=400 * len(proyectos_selec),
+        height=500 * len(proyectos_selec),
         xaxis=dict(
             type='date',
-            tickformat='%b %Y', # Escala Mensual (Ej: Mar 2026)
-            dtick="M1",
+            tickformat='%b %Y', # Formato: Mar 2026
+            dtick="M1",         # Marcas cada Mes
             gridcolor="#F0F0F0",
-            minor=dict(dtick=1000*60*60*24*14, showgrid=True, gridcolor="#F9F9F9", griddash="dot") # Quincenas
+            minor=dict(dtick=1000*60*60*24*14, showgrid=True, gridcolor="#F8F8F8", griddash="dot") # Quincenas
         ),
         yaxis=dict(
             tickmode='array',
-            tickvals=[(i * 15) + y for i in range(len(proyectos_selec)) for y in range(11)],
-            ticktext=(ETAPAS_INV + ["--- EJECUTADO ---"] + ETAPAS_INV + ["--- PLANIFICADO ---"]) * len(proyectos_selec),
+            tickvals=[(i * 20) + y for i in range(len(proyectos_selec)) for y in range(len(ETAPAS_INV))],
+            ticktext=ETAPAS_INV * len(proyectos_selec),
             fixedrange=True
         ),
-        margin=dict(l=220, r=50, t=80, b=50)
+        margin=dict(l=250, r=50, t=80, b=50)
     )
 
-    # Separadores visuales de Proyectos
+    # Identificadores de Proyecto y Etiquetas de Bloque
     for i, p_display in enumerate(proyectos_selec):
+        # Título del Proyecto
         fig.add_annotation(
-            x=-0.05, y=(i * 15) + 5,
+            x=-0.05, y=(i * 20) + 8,
             xref="paper", yref="y",
             text=f"<b>PROYECTO: {p_display.upper()}</b>",
             showarrow=False, xanchor="right", font=dict(size=14, color="#002147")
         )
+        # Etiquetas indicadoras de los bloques
+        fig.add_annotation(x=0, y=(i * 20) + 16.5, xref=\"paper\", yref=\"y\", text=\"<b>📋 PLANIFICADO (Gris)</b>\", showarrow=False, font=dict(color=\"#4F4F4F\"), xanchor=\"left\")
+        fig.add_annotation(x=0, y=(i * 20) + 5.5, xref=\"paper\", yref=\"y\", text=\"<b>🚀 EJECUTADO (Avance Real)</b>\", showarrow=False, font=dict(color=\"green\"), xanchor=\"left\")
 
     st.plotly_chart(fig, use_container_width=True)
