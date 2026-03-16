@@ -146,40 +146,45 @@ def mostrar(supervisor_id=None):
         ahora = datetime.now()
         f_hoy = ahora.strftime("%d/%m/%Y")
         try:
-            lote_para_guardar = []
-            if st.session_state.cambios_pendientes:
-                for c in st.session_state.cambios_pendientes:
-                    lote_para_guardar.append({"producto_id": c['pid'], "hito": c['hito'], "fecha": f_hoy})
-
-            res_db = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['producto_id', 'hito'])
-
-            df_unificado = pd.concat([df_db, pd.DataFrame(lote_para_guardar)[['producto_id', 'hito']]]) if lote_para_guardar else df_db
+            # A. Unificar cambios pendientes con lo que ya hay en BD
+            cambios_pendientes_df = pd.DataFrame(st.session_state.cambios_pendientes)
+            if not cambios_pendientes_df.empty:
+                cambios_pendientes_df = cambios_pendientes_df.rename(columns={'pid': 'producto_id'})
             
-            if not df_unificado.empty:
-                for pid in prods_all['id'].tolist():
-                    hitos_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].unique().tolist()
-                    if hitos_p:
-                        indices = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
-                        if indices:
-                            max_idx = max(indices)
-                            for i in range(max_idx):
-                                if HITOS_LIST[i] not in hitos_p:
-                                    lote_para_guardar.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
+            # Combinamos para saber cuál es el hito máximo REAL de cada producto
+            df_total = pd.concat([segs[['producto_id', 'hito']], cambios_pendientes_df[['producto_id', 'hito']]]).drop_duplicates()
+            
+            lote_final = []
+            for pid in prods_all['id'].tolist():
+                hitos_p = df_total[df_total['producto_id'] == pid]['hito'].tolist()
+                if hitos_p:
+                    # Encontrar el índice más alto alcanzado
+                    idxs = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
+                    max_idx = max(idxs)
+                    
+                    # REGLA DE CASCADA: Rellenar todo desde 0 hasta el máximo hito
+                    for i in range(max_idx + 1):
+                        hito_nombre = HITOS_LIST[i]
+                        # Solo agregamos si no existe en la base de datos original
+                        en_db = not segs[(segs['producto_id'] == pid) & (segs['hito'] == hito_nombre)].empty
+                        if not en_db:
+                            lote_final.append({"producto_id": pid, "hito": hito_nombre, "fecha": f_hoy})
 
-            if lote_para_guardar:
-                df_f_save = pd.DataFrame(lote_para_guardar).drop_duplicates(subset=['producto_id', 'hito'])
-                supabase.table("seguimiento").upsert(df_f_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+            # B. Upsert masivo
+            if lote_final:
+                df_to_save = pd.DataFrame(lote_final).drop_duplicates()
+                supabase.table("seguimiento").upsert(df_to_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
 
+            # C. Recalcular Avance Global y Limpiar
             res_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
             nuevo_av = calc_avance(prods_all, pd.DataFrame(res_f.data))
             supabase.table("proyectos").update({"avance": nuevo_av}).eq("id", id_p).execute()
             
             st.session_state.cambios_pendientes = [] 
-            st.success(f"✅ Guardado: {nuevo_av}%")
+            st.success(f"✅ ¡Proyecto actualizado al {nuevo_av}%!")
             st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error en Guardado/Cascada: {e}")
 
     # 5. Botón Descartar (Mismas dimensiones que Guardar)
     if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True):
