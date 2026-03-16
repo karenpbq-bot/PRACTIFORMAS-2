@@ -378,21 +378,17 @@ def obtener_avance_por_hitos(id_proyecto, df_productos_filtrados=None):
     return avances
 
 def sincronizar_avances_etapas(id_p):
-    """Calcula y guarda el avance consolidado en la tabla avances_etapas."""
     try:
         supabase = conectar()
-        # 1. Obtener productos del proyecto
+        # Traemos productos y seguimiento
         res_prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
         if not res_prods.data: return
         
         num_productos = len(res_prods.data)
         ids_prods = [p['id'] for p in res_prods.data]
-        
-        # 2. Obtener todo el seguimiento
         res_seg = supabase.table("seguimiento").select("hito, fecha").in_("producto_id", ids_prods).execute()
         df_seg = pd.DataFrame(res_seg.data)
 
-        # 3. Definir Grupos
         GRUPOS = {
             "Diseño": ["Diseñado"],
             "Fabricación": ["Fabricado"],
@@ -408,26 +404,20 @@ def sincronizar_avances_etapas(id_p):
             if not df_seg.empty:
                 df_etapa = df_seg[df_seg['hito'].isin(hitos)]
                 if not df_etapa.empty:
-                    # Cálculo: (Hitos logrados) / (Hitos posibles en total para todos los muebles)
                     conteo_logrado = len(df_etapa)
                     max_posible = len(hitos) * num_productos
                     avance = round((conteo_logrado / max_posible) * 100, 1)
-                    
-                    # Fechas reales para el Gantt
                     f_dt = pd.to_datetime(df_etapa['fecha'])
                     f_ini = f_dt.min().strftime('%Y-%m-%d')
                     f_fin = f_dt.max().strftime('%Y-%m-%d')
 
-            # 4. UPSERT en la nueva tabla
-            datos_upsert = {
+            # Upsert para mantener 5 filas por proyecto siempre
+            supabase.table("avances_etapas").upsert({
                 "proyecto_id": id_p,
                 "etapa": etapa,
                 "porcentaje": avance,
                 "fecha_inicio_real": f_ini,
-                "fecha_fin_real": f_fin,
-                "ultima_actualizacion": datetime.now().isoformat()
-            }
-            supabase.table("avances_etapas").upsert(datos_upsert, on_conflict="proyecto_id, etapa").execute()
-            
+                "fecha_fin_real": f_fin
+            }, on_conflict="proyecto_id, etapa").execute()
     except Exception as e:
-        print(f"Error sincronizando avances: {e}")
+        st.error(f"Error en sincronización: {e}")
