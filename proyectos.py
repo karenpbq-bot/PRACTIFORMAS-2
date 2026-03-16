@@ -156,24 +156,38 @@ def mostrar():
                         else:
                             st.warning("Ubicación y Tipo son obligatorios.")
 
-            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS ---
+            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (OPTIMIZADA) ---
             with st.expander("📥 Importar Lista de Productos (Excel/CSV)"):
                 st.info("Columnas requeridas: UBICACION, TIPO, CTD, Medidas (ml)")
                 f_up = st.file_uploader("Seleccionar archivo", type=["xlsx", "csv"], key="uploader_v2")
                 
                 if f_up and st.button("🚀 Iniciar Importación"):
                     try:
+                        # Lectura del archivo
                         df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
-                        for _, r in df_ex.iterrows():
-                            conectar().table("productos").insert({
-                                "proyecto_id": st.session_state.id_p_sel,
+                        
+                        # Limpieza rápida: eliminamos filas donde la ubicación o tipo sean nulos
+                        df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
+                        
+                        # CREACIÓN DEL LOTE (List Comprehension para velocidad)
+                        lote_productos = [
+                            {
+                                "proyecto_id": int(st.session_state.id_p_sel),
                                 "ubicacion": str(r['UBICACION']),
                                 "tipo": str(r['TIPO']),
                                 "ctd": int(r['CTD']),
                                 "ml": float(r['Medidas (ml)'])
-                            }).execute()
-                        st.success("Lista importada con éxito")
-                        st.rerun()
+                            }
+                            for _, r in df_ex.iterrows()
+                        ]
+                        
+                        # INSERCIÓN MASIVA EN UN SOLO VIAJE
+                        if lote_productos:
+                            conectar().table("productos").insert(lote_productos).execute()
+                            st.success(f"✅ ¡Éxito! Se han cargado {len(lote_productos)} productos al proyecto.")
+                            st.balloons()
+                            st.rerun()
+                            
                     except Exception as e:
                         st.error(f"Error en la importación: {e}")
 
