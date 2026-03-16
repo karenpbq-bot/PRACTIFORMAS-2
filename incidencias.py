@@ -68,30 +68,40 @@ def mostrar():
         if 'tmp_mats' not in st.session_state: st.session_state.tmp_mats = []
 
         with st.container(border=True):
-            cm1, cm2 = st.columns([3,1])
-            m_desc = cm1.text_input("Descripción (Accesorios, Pintura, Cerrajería...)")
-            m_cant = cm2.number_input("Cant.", min_value=1, key="m_cant")
+            cm1, cm2, cm3 = st.columns([2,1,1])
+            m_desc = cm1.text_input("Descripción (Accesorio, Pintura, etc)")
+            m_cant = cm2.number_input("Cant.", min_value=1, key="m_cant_input")
+            m_unidad = cm3.selectbox("Unidad", ["Und", "Mts", "Lts", "Par"])
             m_obs = st.text_input("Observaciones de material")
-            if st.button("➕ Agregar Material"):
-                st.session_state.tmp_mats.append({"descripcion": m_desc, "cantidad": m_cant, "observaciones": m_obs})
+            
+            if st.button("➕ Añadir Material a la lista"):
+                st.session_state.tmp_mats.append({
+                    "descripcion": m_desc, "cantidad": m_cant, "unidad": m_unidad, "observaciones": m_obs
+                })
+                st.rerun()
 
         if st.session_state.tmp_mats:
-            st.write("### Lista de Materiales")
+            st.write("### 📋 Matriz Consolidada de Materiales")
             st.table(pd.DataFrame(st.session_state.tmp_mats))
-            if st.button("🚀 Enviar Requerimiento de Materiales"):
+            if st.button("🚀 ENVIAR REQUERIMIENTO CONSOLIDADO (MATERIALES)", type="primary"):
                 registrar_incidencia_detallada(dict_proyectos[proy_m], "Materiales", motivo_m, [], st.session_state.tmp_mats, st.session_state.id_usuario)
                 st.session_state.tmp_mats = []
-                st.success("Enviado con éxito"); st.rerun()
+                st.success("Bloque de materiales enviado con éxito"); st.rerun()
 
     # --- PESTAÑA 3: HISTORIAL ---
     with tab_h:
+        st.subheader("📜 Historial de Requerimientos Consolidados")
         historial = obtener_incidencias_resumen()
         if not historial.empty:
             for _, inc in historial.iterrows():
-                with st.expander(f"REQ-{inc['id']} | {inc['proyecto_text']} | {inc['tipo_requerimiento']} ({inc['categoria']})"):
-                    # Lógica de estados y exportación ya definida en la base anterior
-                    st.write(f"Estado Actual: **{inc['estado']}**")
-                    # Botón para descargar Excel (Pestañas automáticas según tipo)
-                    # ... (Aquí va el código de io.BytesIO que genera las pestañas)
-        else:
-            st.info("No hay reportes registrados.")
+                # El expander ahora representa el REQUERIMIENTO completo
+                with st.expander(f"📦 REQ-{inc['id']} | {inc['proyecto_text']} | {inc['tipo_requerimiento']}"):
+                    st.write(f"**Motivo:** {inc['categoria']} | **Estado:** {inc['estado']}")
+                    
+                    # Verificamos si hay detalles (JSON) para mostrar la tabla interna
+                    if 'detalles' in inc and inc['detalles']:
+                        st.write("**Detalle del Requerimiento:**")
+                        st.dataframe(pd.DataFrame(inc['detalles']), use_container_width=True)
+                    
+                    # Botón para descargar el Excel consolidado de este REQ específico
+                    # ... (lógica de exportación)
