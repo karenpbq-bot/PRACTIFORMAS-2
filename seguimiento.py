@@ -129,65 +129,56 @@ def mostrar(supervisor_id=None):
 
     # --- FILA DE ACCIONES (CONTROL TOTAL) ---
     st.divider()
-    # Ajustamos a 5 columnas para que el espacio sea aprovechado por las métricas y botones solicitados
     act1, act2, act3, act4, act5 = st.columns([1.5, 1, 1, 1.3, 1.3])
     
-    # 1. Fecha
-    f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY")
-    
-    # 2. Avance Parcial
+    f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY", key="fecha_reg_unico")
     act2.metric("Av. Parcial", f"{p_par}%")
-
-    # 3. Avance Global
     act3.metric("Av. Global", f"{p_tot}%")
     
-    # 4. Botón Guardar Avance
-    if act4.button("💾 Guardar Avance", type="primary", use_container_width=True):
+    # BOTÓN GUARDAR CON ID ÚNICO
+    if act4.button("💾 Guardar Avance", type="primary", use_container_width=True, key="btn_guardar_definitivo"):
         ahora = datetime.now()
         f_hoy = ahora.strftime("%d/%m/%Y")
         try:
-            # A. Unificar cambios pendientes con lo que ya hay en BD
-            cambios_pendientes_df = pd.DataFrame(st.session_state.cambios_pendientes)
-            if not cambios_pendientes_df.empty:
-                cambios_pendientes_df = cambios_pendientes_df.rename(columns={'pid': 'producto_id'})
+            # A. Obtener hitos actuales en BD
+            res_db = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
+            df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['producto_id', 'hito'])
             
-            # Combinamos para saber cuál es el hito máximo REAL de cada producto
-            df_total = pd.concat([segs[['producto_id', 'hito']], cambios_pendientes_df[['producto_id', 'hito']]]).drop_duplicates()
-            
+            # B. Preparar lote de guardado incluyendo la CASCADA
             lote_final = []
+            
+            # Unimos BD + Memoria Temporal para saber el hito máximo de cada producto
+            df_cambios = pd.DataFrame(st.session_state.cambios_pendientes).rename(columns={'pid': 'producto_id'}) if st.session_state.cambios_pendientes else pd.DataFrame(columns=['producto_id', 'hito'])
+            df_unificado = pd.concat([df_db[['producto_id', 'hito']], df_cambios[['producto_id', 'hito']]]).drop_duplicates()
+
             for pid in prods_all['id'].tolist():
-                hitos_p = df_total[df_total['producto_id'] == pid]['hito'].tolist()
+                hitos_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].tolist()
                 if hitos_p:
-                    # Encontrar el índice más alto alcanzado
+                    # Encontrar el índice más alto alcanzado (Cascada)
                     idxs = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
                     max_idx = max(idxs)
                     
-                    # REGLA DE CASCADA: Rellenar todo desde 0 hasta el máximo hito
+                    # REGLA: Rellenar todo desde la etapa 1 hasta la etapa N (max_idx)
                     for i in range(max_idx + 1):
-                        hito_nombre = HITOS_LIST[i]
-                        # Solo agregamos si no existe en la base de datos original
-                        en_db = not segs[(segs['producto_id'] == pid) & (segs['hito'] == hito_nombre)].empty
-                        if not en_db:
-                            lote_final.append({"producto_id": pid, "hito": hito_nombre, "fecha": f_hoy})
+                        h_nom = HITOS_LIST[i]
+                        # Solo si NO está en la base de datos ya guardado
+                        if df_db[(df_db['producto_id'] == pid) & (df_db['hito'] == h_nom)].empty:
+                            lote_final.append({"producto_id": pid, "hito": h_nom, "fecha": f_hoy})
 
-            # B. Upsert masivo
+            # C. Ejecutar Guardado
             if lote_final:
-                df_to_save = pd.DataFrame(lote_final).drop_duplicates()
-                supabase.table("seguimiento").upsert(df_to_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+                df_f_save = pd.DataFrame(lote_final).drop_duplicates(subset=['producto_id', 'hito'])
+                supabase.table("seguimiento").upsert(df_f_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
 
-            # C. Recalcular Avance Global y Limpiar
-            res_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            nuevo_av = calc_avance(prods_all, pd.DataFrame(res_f.data))
-            supabase.table("proyectos").update({"avance": nuevo_av}).eq("id", id_p).execute()
-            
+            # Actualizar proyecto y limpiar
             st.session_state.cambios_pendientes = [] 
-            st.success(f"✅ ¡Proyecto actualizado al {nuevo_av}%!")
+            st.success("✅ Guardado exitoso con cascada.")
             st.rerun()
         except Exception as e:
-            st.error(f"Error en Guardado/Cascada: {e}")
+            st.error(f"Error en cascada: {e}")
 
-    # 5. Botón Descartar (Mismas dimensiones que Guardar)
-    if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True):
+    # BOTÓN DESCARTAR CON ID ÚNICO
+    if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True, key="btn_descartar_definitivo"):
         st.session_state.cambios_pendientes = []
         st.rerun()
         
