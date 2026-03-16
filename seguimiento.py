@@ -127,26 +127,25 @@ def mostrar(supervisor_id=None):
 
     p_tot, p_par = calc_avance(prods_all, segs), calc_avance(df_f, segs)
 
-    # --- ACCIONES E INDICADORES (FECHA CORREGIDA) ---
+    # --- FILA DE ACCIONES (CONTROL TOTAL) ---
     st.divider()
-    # Ajustamos proporciones para que los botones finales (act4 y act5) tengan dimensiones idénticas
-    act1, act2, act3, act4, act5 = st.columns([1.5, 0.8, 1, 1.2, 1.2])
+    # Ajustamos a 5 columnas para que el espacio sea aprovechado por las métricas y botones solicitados
+    act1, act2, act3, act4, act5 = st.columns([1.5, 1, 1, 1.3, 1.3])
     
     # 1. Fecha
     f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY")
-         
-    # 2. Métrica de Avance Parcial (Recuperada)
-    act3.metric("Av. Parcial", f"{p_par}%")
-
-    # 3. Métrica de Avance Global (Recuperada)
-    act4.metric("Av. Global", f"{p_tot}%")
     
-    # 4. Botón Guardar (Mismo tamaño que el de descartar)
+    # 2. Avance Parcial
+    act2.metric("Av. Parcial", f"{p_par}%")
+
+    # 3. Avance Global
+    act3.metric("Av. Global", f"{p_tot}%")
+    
+    # 4. Botón Guardar Avance
     if act4.button("💾 Guardar Avance", type="primary", use_container_width=True):
         ahora = datetime.now()
         f_hoy = ahora.strftime("%d/%m/%Y")
         try:
-            # --- Lógica de guardado masivo ---
             lote_para_guardar = []
             if st.session_state.cambios_pendientes:
                 for c in st.session_state.cambios_pendientes:
@@ -155,38 +154,34 @@ def mostrar(supervisor_id=None):
             res_db = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
             df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['producto_id', 'hito'])
 
-            if lote_para_guardar:
-                df_manual = pd.DataFrame(lote_para_guardar)[['producto_id', 'hito']]
-                df_unificado = pd.concat([df_db, df_manual]).drop_duplicates()
-            else:
-                df_unificado = df_db
+            df_unificado = pd.concat([df_db, pd.DataFrame(lote_para_guardar)[['producto_id', 'hito']]]) if lote_para_guardar else df_db
             
             if not df_unificado.empty:
                 for pid in prods_all['id'].tolist():
-                    hitos_del_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].unique().tolist()
-                    if hitos_del_p:
-                        indices = [HITOS_LIST.index(h) for h in hitos_del_p if h in HITOS_LIST]
+                    hitos_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].unique().tolist()
+                    if hitos_p:
+                        indices = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
                         if indices:
                             max_idx = max(indices)
                             for i in range(max_idx):
-                                if HITOS_LIST[i] not in hitos_del_p:
+                                if HITOS_LIST[i] not in hitos_p:
                                     lote_para_guardar.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
 
             if lote_para_guardar:
-                df_final = pd.DataFrame(lote_para_guardar).drop_duplicates(subset=['producto_id', 'hito'])
-                supabase.table("seguimiento").upsert(df_final.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+                df_f_save = pd.DataFrame(lote_para_guardar).drop_duplicates(subset=['producto_id', 'hito'])
+                supabase.table("seguimiento").upsert(df_f_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
 
             res_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            nuevo_avance = calc_avance(prods_all, pd.DataFrame(res_f.data))
-            supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
+            nuevo_av = calc_avance(prods_all, pd.DataFrame(res_f.data))
+            supabase.table("proyectos").update({"avance": nuevo_av}).eq("id", id_p).execute()
             
             st.session_state.cambios_pendientes = [] 
-            st.success(f"✅ Guardado: {nuevo_avance}%")
+            st.success(f"✅ Guardado: {nuevo_av}%")
             st.rerun()
         except Exception as e:
             st.error(f"Error: {e}")
 
-    # 5. Botón Descartar (Nombre corregido y dimensiones idénticas)
+    # 5. Botón Descartar (Mismas dimensiones que Guardar)
     if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True):
         st.session_state.cambios_pendientes = []
         st.rerun()
