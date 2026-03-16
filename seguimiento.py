@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
-from base_datos import conectar, obtener_proyectos, obtener_productos_por_proyecto, obtener_seguimiento, guardar_seguimiento
+from base_datos import conectar, obtener_proyectos, obtener_productos_por_proyecto, obtener_seguimiento
 
 # =========================================================
 # 1. CONFIGURACIÓN Y DICCIONARIOS MAESTROS
@@ -16,29 +16,16 @@ MAPEO_HITOS = {
 HITOS_LIST = list(MAPEO_HITOS.keys())
 
 # =========================================================
-# 2. LÓGICA DE CASCADA Y SEGURIDAD
-# =========================================================
-def registrar_hito_individual(p_id, hito, fecha_str):
-    supabase = conectar()
-    try:
-        supabase.table("seguimiento").upsert({
-            "producto_id": int(p_id), 
-            "hito": str(hito), 
-            "fecha": str(fecha_str)
-        }, on_conflict="producto_id, hito").execute()
-    except Exception as e:
-        st.error(f"Error al registrar: {e}")
-
-# =========================================================
-# 3. INTERFAZ PRINCIPAL
+# 2. INTERFAZ PRINCIPAL
 # =========================================================
 def mostrar(supervisor_id=None):
-    # --- 1. MEMORIA TEMPORAL ---
+    # --- A. INICIALIZACIÓN DE MEMORIA TEMPORAL (PERSISTENCIA) ---
     if 'cambios_pendientes' not in st.session_state:
         st.session_state.cambios_pendientes = []
+    if 'notas_pendientes' not in st.session_state:
+        st.session_state.notas_pendientes = {}
 
-    # --- 2. TÍTULOS Y ESTILOS ---
-    # Mantenemos el CSS para que los porcentajes se vean naranja y el encabezado sea fijo
+    # --- B. ESTILOS CSS (DISEÑO PRESERVADO) ---
     st.markdown("""
         <style>
         .sticky-top { position: sticky; top: 0; background: white; z-index: 1000; padding: 10px 0; border-bottom: 3px solid #FF8C00; }
@@ -47,16 +34,16 @@ def mostrar(supervisor_id=None):
         </style>
     """, unsafe_allow_html=True)
 
-    nombre_proy = st.session_state.get('p_nom_sel', "Ninguno")
-    st.markdown("### Seguimiento de Avances")
-    st.markdown(f"<p style='font-size: 16px; color: #666; margin-top: -15px;'>{nombre_proy}</p>", unsafe_allow_html=True)
-
     supabase = conectar()
 
-    # --- BÚSQUEDA DE PROYECTO ---
-    with st.expander("Búsqueda de Proyecto", expanded=not st.session_state.get('id_p_sel')):
+    # --- C. BÚSQUEDA DE PROYECTO ---
+    nombre_proy_actual = st.session_state.get('p_nom_sel', "Ninguno")
+    st.markdown("### Seguimiento de Avances")
+    st.markdown(f"<p style='font-size: 16px; color: #666; margin-top: -15px;'>{nombre_proy_actual}</p>", unsafe_allow_html=True)
+
+    with st.expander("🔍 Búsqueda de Proyecto", expanded=not st.session_state.get('id_p_sel')):
         c1, c2 = st.columns([2, 1])
-        bus_p = c1.text_input("🔍 Escribe nombre, código o cliente...", key="bus_seg_v2")
+        bus_p = c1.text_input("Escribe nombre, código o cliente...", key="bus_seg_v2")
         df_p_all = obtener_proyectos(bus_p)
         
         if supervisor_id and not df_p_all.empty:
@@ -66,7 +53,7 @@ def mostrar(supervisor_id=None):
             opciones = {f"[{r['codigo']}] {r['proyecto_text']} - {r['cliente']}": r['id'] for _, r in df_p_all.iterrows()}
             lista_opc = ["-- Seleccionar --"] + list(opciones.keys())
             idx_s = lista_opc.index(st.session_state.p_nom_sel) if st.session_state.get('p_nom_sel') in lista_opc else 0
-            sel_n = c2.selectbox("Seleccione Proyecto:", lista_opc, index=idx_s)
+            sel_n = c2.selectbox("Seleccione Proyecto:", lista_opc, index=idx_s, key="sel_proy_seg")
             
             if sel_n != "-- Seleccionar --":
                 st.session_state.id_p_sel = opciones[sel_n]
@@ -75,47 +62,59 @@ def mostrar(supervisor_id=None):
                 st.session_state.id_p_sel = None
 
     if not st.session_state.get('id_p_sel'):
-        st.info("💡 Por favor, seleccione un proyecto."); return
+        st.info("💡 Por favor, seleccione un proyecto para continuar."); return
 
+    # --- D. CARGA DE DATOS ---
     id_p = st.session_state.id_p_sel
     prods_all = obtener_productos_por_proyecto(id_p)
-    if prods_all.empty: st.warning("Sin productos."); return
+    if prods_all.empty: st.warning("El proyecto no tiene productos."); return
 
     segs_res = supabase.table("seguimiento").select("*").in_("producto_id", prods_all['id'].tolist()).execute()
     segs = pd.DataFrame(segs_res.data) if segs_res.data else pd.DataFrame(columns=['producto_id','hito','fecha','observaciones'])
 
-    # --- CONFIGURACIÓN AVANZADA Y HERRAMIENTAS ---
-    with st.expander("CONFIGURACIÓN AVANZADA Y HERRAMIENTAS", expanded=False):
+    # --- E. CONFIGURACIÓN Y HERRAMIENTAS (PONDERACIÓN, FILTROS, IMPORT/EXPORT) ---
+    with st.expander("⚙️ CONFIGURACIÓN AVANZADA Y HERRAMIENTAS", expanded=False):
         t1, t2, t3, t4 = st.tabs(["⚖️ Ponderación", "🔍 Filtros", "📥 Importar", "📤 Exportación"])
+        
         with t1:
             cols_w = st.columns(4)
-            pesos = {h: cols_w[i % 4].number_input(f"{h} (%)", value=12.5, step=0.5, key=f"p_{h}") for i, h in enumerate(HITOS_LIST)}
+            pesos = {h: cols_w[i % 4].number_input(f"{h} (%)", value=12.5, step=0.5, key=f"peso_{h}") for i, h in enumerate(HITOS_LIST)}
+        
         with t2:
             f1, f2, f3 = st.columns(3)
-            agrupar_por = f1.selectbox("Agrupar por:", ["Sin grupo", "Ubicación", "Tipo"])
-            bus_c1, bus_c2 = f2.text_input("Filtro Primario:"), f3.text_input("Refinar Búsqueda:")
+            agrupar_por = f1.selectbox("Agrupar por:", ["Sin grupo", "Ubicación", "Tipo"], key="agrupar_seg")
+            bus_c1 = f2.text_input("Filtro Primario:", key="f_pri_seg")
+            bus_c2 = f3.text_input("Refinar Búsqueda:", key="f_ref_seg")
+
         with t3:
-            f_av = st.file_uploader("Subir Excel", type=["xlsx", "csv"])
-            if f_av and st.button("🚀 Iniciar Importación"):
+            f_av = st.file_uploader("Subir Excel de Avances", type=["xlsx", "csv"], key="uploader_excel")
+            if f_av and st.button("🚀 Iniciar Importación con Cascada"):
                 df_imp = pd.read_excel(f_av) if f_av.name.endswith('xlsx') else pd.read_csv(f_av)
+                f_hoy = datetime.now().strftime("%d/%m/%Y")
+                lote_imp = []
                 for _, r_ex in df_imp.iterrows():
                     match = prods_all[(prods_all['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & (prods_all['tipo'].astype(str) == str(r_ex.get('Tipo','')))]
                     if not match.empty:
-                        pid = match.iloc[0]['id']
-                        for h in reversed(HITOS_LIST):
-                            if pd.notnull(r_ex.get(h)) and str(r_ex.get(h)).strip() != "":
-                                registrar_hitos_cascada(pid, h, str(r_ex.get(h)))
-                                break
-                st.success("Importado."); st.rerun()
+                        pid = int(match.iloc[0]['id'])
+                        max_idx_imp = -1
+                        for h_idx, h_nom in enumerate(HITOS_LIST):
+                            if pd.notnull(r_ex.get(h_nom)) and str(r_ex.get(h_nom)).strip() != "": max_idx_imp = h_idx
+                        if max_idx_imp >= 0:
+                            for i in range(max_idx_imp + 1):
+                                lote_imp.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
+                if lote_imp:
+                    supabase.table("seguimiento").upsert(pd.DataFrame(lote_imp).drop_duplicates().to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+                    st.success("Importación exitosa con cascada aplicada."); st.rerun()
+
         with t4:
             df_exp = prods_all.copy()
             for h in HITOS_LIST: df_exp[h] = df_exp['id'].apply(lambda x: segs[(segs['producto_id']==x) & (segs['hito']==h)]['fecha'].iloc[0] if not segs[(segs['producto_id']==x) & (segs['hito']==h)].empty else "")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_exp[['ubicacion', 'tipo', 'ctd', 'ml'] + HITOS_LIST].to_excel(writer, index=False)
-            st.download_button("📥 Descargar Avance (Excel)", data=output.getvalue(), file_name=f"Avance_{id_p}.xlsx", use_container_width=True)
+            st.download_button("📥 Descargar Avance Actual (Excel)", data=output.getvalue(), file_name=f"Avance_Proy_{id_p}.xlsx", use_container_width=True)
 
-    # Filtrado y Avances
+    # --- F. LÓGICA DE CÁLCULO DE AVANCES ---
     df_f = prods_all.copy()
     if bus_c1: df_f = df_f[df_f['ubicacion'].str.contains(bus_c1, case=False) | df_f['tipo'].str.contains(bus_c1, case=False)]
     if bus_c2: df_f = df_f[df_f['ubicacion'].str.contains(bus_c2, case=False) | df_f['tipo'].str.contains(bus_c2, case=False)]
@@ -127,62 +126,51 @@ def mostrar(supervisor_id=None):
 
     p_tot, p_par = calc_avance(prods_all, segs), calc_avance(df_f, segs)
 
-    # --- FILA DE ACCIONES (CONTROL TOTAL) ---
+    # --- G. FILA DE ACCIONES (CONTROL TOTAL) ---
     st.divider()
     act1, act2, act3, act4, act5 = st.columns([1.5, 1, 1, 1.3, 1.3])
-    
-    f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY", key="fecha_reg_unico")
+    f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY", key="f_reg_u")
     act2.metric("Av. Parcial", f"{p_par}%")
     act3.metric("Av. Global", f"{p_tot}%")
     
-    # BOTÓN GUARDAR CON ID ÚNICO
-    if act4.button("💾 Guardar Avance", type="primary", use_container_width=True, key="btn_guardar_definitivo"):
-        ahora = datetime.now()
-        f_hoy = ahora.strftime("%d/%m/%Y")
+    if act4.button("💾 Guardar Avance", type="primary", use_container_width=True, key="btn_guardar_final"):
+        f_hoy = f_reg.strftime("%d/%m/%Y")
         try:
-            # A. Obtener hitos actuales en BD
-            res_db = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['producto_id', 'hito'])
+            # 1. Notas (Diferidas)
+            for pid_n, obs in st.session_state.notas_pendientes.items():
+                supabase.table("seguimiento").upsert({"producto_id": int(pid_n), "hito": HITOS_LIST[0], "observaciones": obs}, on_conflict="producto_id, hito").execute()
             
-            # B. Preparar lote de guardado incluyendo la CASCADA
-            lote_final = []
+            # 2. Checks y Cascada
+            df_cp = pd.DataFrame(st.session_state.cambios_pendientes).rename(columns={'pid': 'producto_id'}) if st.session_state.cambios_pendientes else pd.DataFrame(columns=['producto_id', 'hito'])
+            df_unificado = pd.concat([segs[['producto_id', 'hito']], df_cp[['producto_id', 'hito']]]).drop_duplicates()
             
-            # Unimos BD + Memoria Temporal para saber el hito máximo de cada producto
-            df_cambios = pd.DataFrame(st.session_state.cambios_pendientes).rename(columns={'pid': 'producto_id'}) if st.session_state.cambios_pendientes else pd.DataFrame(columns=['producto_id', 'hito'])
-            df_unificado = pd.concat([df_db[['producto_id', 'hito']], df_cambios[['producto_id', 'hito']]]).drop_duplicates()
-
+            lote_save = []
             for pid in prods_all['id'].tolist():
                 hitos_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].tolist()
                 if hitos_p:
-                    # Encontrar el índice más alto alcanzado (Cascada)
-                    idxs = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
-                    max_idx = max(idxs)
-                    
-                    # REGLA: Rellenar todo desde la etapa 1 hasta la etapa N (max_idx)
+                    max_idx = max([HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST])
                     for i in range(max_idx + 1):
                         h_nom = HITOS_LIST[i]
-                        # Solo si NO está en la base de datos ya guardado
-                        if df_db[(df_db['producto_id'] == pid) & (df_db['hito'] == h_nom)].empty:
-                            lote_final.append({"producto_id": pid, "hito": h_nom, "fecha": f_hoy})
+                        if segs[(segs['producto_id'] == pid) & (segs['hito'] == h_nom)].empty:
+                            lote_save.append({"producto_id": pid, "hito": h_nom, "fecha": f_hoy})
+            
+            if lote_save:
+                supabase.table("seguimiento").upsert(pd.DataFrame(lote_save).drop_duplicates().to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+            
+            # 3. Actualizar Avance en Proyecto
+            res_fin = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
+            nuevo_av = calc_avance(prods_all, pd.DataFrame(res_fin.data))
+            supabase.table("proyectos").update({"avance": nuevo_av}).eq("id", id_p).execute()
 
-            # C. Ejecutar Guardado
-            if lote_final:
-                df_f_save = pd.DataFrame(lote_final).drop_duplicates(subset=['producto_id', 'hito'])
-                supabase.table("seguimiento").upsert(df_f_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+            st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
+            st.success(f"✅ Avance guardado al {nuevo_av}%"); st.rerun()
+        except Exception as e: st.error(f"Error al guardar: {e}")
 
-            # Actualizar proyecto y limpiar
-            st.session_state.cambios_pendientes = [] 
-            st.success("✅ Guardado exitoso con cascada.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error en cascada: {e}")
-
-    # BOTÓN DESCARTAR CON ID ÚNICO
-    if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True, key="btn_descartar_definitivo"):
-        st.session_state.cambios_pendientes = []
+    if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True, key="btn_descartar"):
+        st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
         st.rerun()
-        
-    # --- MATRIZ CON STICKY HEADER ---
+
+    # --- H. MATRIZ CON STICKY HEADER ---
     st.markdown('<div class="sticky-top">', unsafe_allow_html=True)
     cols_h = st.columns([2.5] + [0.7]*8 + [1.5])
     cols_h[0].write("**Producto**")
@@ -191,82 +179,57 @@ def mostrar(supervisor_id=None):
             st.write(MAPEO_HITOS[h])
             if st.button("✅", key=f"bk_{h}"):
                 for pid in df_f['id'].tolist():
-                    # Marcamos en memoria solo si no está en BD y no está ya en memoria
-                    en_db = not segs[(segs['producto_id'] == pid) & (segs['hito'] == h)].empty
-                    ya_en_memoria = any(c['pid'] == pid and c['hito'] == h for c in st.session_state.cambios_pendientes)
-                    if not en_db and not ya_en_memoria:
-                        st.session_state.cambios_pendientes.append({"pid": pid, "hito": h})
-                # Usamos st.toast para avisar en lugar de rerun, manteniendo los filtros intactos
-                st.toast(f"Columna {h} marcada para guardar.")
+                    if segs[(segs['producto_id'] == pid) & (segs['hito'] == h)].empty:
+                        if not any(c['pid'] == pid and c['hito'] == h for c in st.session_state.cambios_pendientes):
+                            st.session_state.cambios_pendientes.append({"pid": pid, "hito": h})
+                st.rerun()
     cols_h[-1].write("**Notas**")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- ÁREA DE PRODUCTOS (SCROLL) ---
+    # --- I. ÁREA DE PRODUCTOS (SCROLL MATRIZ) ---
     st.markdown('<div class="scroll-area">', unsafe_allow_html=True)
     
-    # 4. Botón Guardar Avance
-    if act4.button("💾 Guardar Avance", type="primary", use_container_width=True):
-        ahora = datetime.now()
-        f_hoy = ahora.strftime("%d/%m/%Y")
-        try:
-            # A. Unificar cambios pendientes con lo que ya hay en BD
-            cambios_pendientes_df = pd.DataFrame(st.session_state.cambios_pendientes)
-            if not cambios_pendientes_df.empty:
-                cambios_pendientes_df = cambios_pendientes_df.rename(columns={'pid': 'producto_id'})
+    def render_matriz(df_r):
+        rol = st.session_state.get('rol', 'Supervisor')
+        for _, p in df_r.iterrows():
+            cols = st.columns([2.5] + [0.7]*8 + [1.5])
+            cols[0].write(f"**{p['ubicacion']}** {p['tipo']} {p['ml']}ml")
             
-            # Combinamos para saber cuál es el hito máximo REAL de cada producto
-            df_total = pd.concat([segs[['producto_id', 'hito']], cambios_pendientes_df[['producto_id', 'hito']]]).drop_duplicates()
-            
-            lote_final = []
-            for pid in prods_all['id'].tolist():
-                hitos_p = df_total[df_total['producto_id'] == pid]['hito'].tolist()
-                if hitos_p:
-                    # Encontrar el índice más alto alcanzado
-                    idxs = [HITOS_LIST.index(h) for h in hitos_p if h in HITOS_LIST]
-                    max_idx = max(idxs)
-                    
-                    # REGLA DE CASCADA: Rellenar todo desde 0 hasta el máximo hito
-                    for i in range(max_idx + 1):
-                        hito_nombre = HITOS_LIST[i]
-                        # Solo agregamos si no existe en la base de datos original
-                        en_db = not segs[(segs['producto_id'] == pid) & (segs['hito'] == hito_nombre)].empty
-                        if not en_db:
-                            lote_final.append({"producto_id": pid, "hito": hito_nombre, "fecha": f_hoy})
+            for i, h in enumerate(HITOS_LIST):
+                en_db = not segs[(segs['producto_id'] == p['id']) & (segs['hito'] == h)].empty
+                idx_mem = next((index for (index, d) in enumerate(st.session_state.cambios_pendientes) if d["pid"] == p['id'] and d["hito"] == h), None)
+                existe = en_db or (idx_mem is not None)
+                
+                # Reglas de bloqueo y borrado (8 a 1)
+                tiene_post_db = not segs[(segs['producto_id'] == p['id']) & (segs['hito'].isin(HITOS_LIST[i+1:]))].empty
+                bloqueado = (en_db and rol == "Supervisor") or tiene_post_db
 
-            # B. Upsert masivo
-            if lote_final:
-                df_to_save = pd.DataFrame(lote_final).drop_duplicates()
-                supabase.table("seguimiento").upsert(df_to_save.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
+                if cols[i+1].checkbox("", key=f"c_{p['id']}_{h}", value=existe, disabled=bloqueado, label_visibility="collapsed"):
+                    if not existe:
+                        st.session_state.cambios_pendientes.append({"pid": p['id'], "hito": h})
+                        st.rerun()
+                else:
+                    if idx_mem is not None:
+                        st.session_state.cambios_pendientes.pop(idx_mem)
+                        st.rerun()
+                    elif en_db and not bloqueado:
+                        tiene_post_mem = any(d["pid"] == p['id'] and d["hito"] in HITOS_LIST[i+1:] for d in st.session_state.cambios_pendientes)
+                        if not tiene_post_db and not tiene_post_mem:
+                            supabase.table("seguimiento").delete().eq("producto_id", p['id']).eq("hito", h).execute()
+                            st.rerun()
+                        else: st.error("Borre etapas posteriores primero")
 
-            # C. Recalcular Avance Global y Limpiar
-            res_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            nuevo_av = calc_avance(prods_all, pd.DataFrame(res_f.data))
-            supabase.table("proyectos").update({"avance": nuevo_av}).eq("id", id_p).execute()
-            
-            st.session_state.cambios_pendientes = [] 
-            st.success(f"✅ ¡Proyecto actualizado al {nuevo_av}%!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error en Guardado/Cascada: {e}")
-            
-            # Notas (Mantenemos tu lógica)
-            n_val = m_data['observaciones'].iloc[0] if (en_db and 'observaciones' in m_data.columns and pd.notnull(m_data['observaciones'].iloc[0])) else ""
-            nueva_n = cols[-1].text_input("N", value=n_val, key=f"obs_{p['id']}", label_visibility="collapsed")
-            if nueva_n != n_val:
-                conectar().table("seguimiento").update({"observaciones": nueva_n}).eq("producto_id", p['id']).eq("hito", HITOS_LIST[0]).execute()
+            # Notas Diferidas
+            n_db = segs[(segs['producto_id'] == p['id']) & (segs['hito'] == HITOS_LIST[0])]['observaciones'].iloc[0] if not segs[(segs['producto_id'] == p['id']) & (segs['hito'] == HITOS_LIST[0])].empty else ""
+            n_actual = st.session_state.notas_pendientes.get(str(p['id']), n_db if pd.notnull(n_db) else "")
+            nueva_nota = cols[-1].text_input("N", value=n_actual, key=f"n_{p['id']}", label_visibility="collapsed")
+            if nueva_nota != n_actual: st.session_state.notas_pendientes[str(p['id'])] = nueva_nota
 
-    # --- 3. RENDERIZADO DE MATRIZ CON LÓGICA DE AGRUPACIÓN ---
+    # --- J. RENDERIZADO FINAL CON AGRUPACIÓN ---
     if agrupar_por != "Sin grupo":
-        # Mapeamos el nombre visible al nombre real de la columna en la BD
-        campo_real = "ubicacion" if agrupar_por == "Ubicación" else "tipo"
-        
-        # Verificamos que la columna existe en el dataframe antes de agrupar
-        if campo_real in df_f.columns:
-            for n, g in df_f.groupby(campo_real):
-                st.markdown(f"**📂 {agrupar_por}: {n}**")
-                render_matriz(g)
-        else:
-            render_matriz(df_f)
-    else:
-        render_matriz(df_f)
+        campo = "ubicacion" if agrupar_por == "Ubicación" else "tipo"
+        for n, g in df_f.groupby(campo):
+            st.markdown(f"**📂 {agrupar_por}: {n}**")
+            render_matriz(g)
+    else: render_matriz(df_f)
     st.markdown('</div>', unsafe_allow_html=True)
