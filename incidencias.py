@@ -24,20 +24,22 @@ def mostrar():
         proy_p = c1.selectbox("Proyecto:", list(dict_proyectos.keys()), key="proy_p_sel")
         motivo_p = c2.selectbox("Motivo:", MOTIVOS, key="mot_p_sel")
         
+        # ... (dentro de la Pestaña 1: Piezas)
         with st.expander("➕ Agregar Pieza a la Matriz", expanded=True):
             col_a, col_b, col_c = st.columns([2,1,1])
             desc = col_a.text_input("Descripción de la pieza", key="in_p_desc")
             cant = col_b.number_input("Cantidad", min_value=1, key="in_p_cant")
             ubi = col_c.text_input("Ubicación", key="in_p_ubi")
             
-            # AJUSTE DE ETIQUETAS SOLICITADO
             col_d, col_e, col_f, col_g = st.columns(4)
+            # ETIQUETAS CORREGIDAS SEGÚN TU SOLICITUD
             veta = col_d.number_input("Veta (Dimención)", min_value=0, key="in_p_veta")
             nveta = col_e.number_input("No Veta (Dimención)", min_value=0, key="in_p_nveta")
             mat = col_f.text_input("Material / Color", key="in_p_mat")
-            rot = col_g.selectbox("Rotación", [0, 1], key="in_p_rot")
+            rot = col_g.selectbox("Rotación", [0, 1], help="0: No / 1: Si", key="in_p_rot")
             
-            if st.button("➕ Añadir a Matriz"):
+            # Tapacantos y botón Añadir (igual que antes)
+            if st.button("➕ Añadir a Matriz", key="btn_add_p"):
                 st.session_state.tmp_piezas.append({
                     "descripcion": desc, "veta": veta, "no_veta": nveta, "cantidad": cant,
                     "ubicacion": ubi, "material": mat, "rotacion": rot
@@ -45,11 +47,12 @@ def mostrar():
                 st.rerun()
 
         if st.session_state.tmp_piezas:
+            st.write("### 📋 Bloque de Piezas Consolidado")
             st.dataframe(pd.DataFrame(st.session_state.tmp_piezas), use_container_width=True)
-            if st.button("🚀 ENVIAR CONSOLIDADO DE PIEZAS"):
+            if st.button("🚀 ENVIAR REQUERIMIENTO (PIEZAS)", type="primary"):
                 registrar_incidencia_detallada(dict_proyectos[proy_p], "Piezas", motivo_p, st.session_state.tmp_piezas, [], st.session_state.get('id_usuario'))
                 st.session_state.tmp_piezas = []
-                st.success("Enviado con éxito"); st.rerun()
+                st.success("Requerimiento enviado con éxito."); st.rerun()
 
     # --- PESTAÑA 2: MATERIALES ---
     with tab_m:
