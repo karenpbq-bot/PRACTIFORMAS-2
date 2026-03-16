@@ -104,47 +104,46 @@ def mostrar():
                         ))
                     except: continue
 
-        # --- D. GENERACIÓN DEL GRÁFICO (OPTIMIZADO) ---
+       # --- D. GENERACIÓN DEL GRÁFICO (CORRECCIÓN DE ORDEN) ---
         if not data_final:
             st.warning("No hay datos para mostrar."); return
 
         df_fig = pd.DataFrame(data_final)
         
-        # 1. ORDEN CRÍTICO: Asegura que Diseño sea el primero (arriba)
+        # 1. Definimos el orden categórico
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        # Ordenamos para que Plotly respete la jerarquía
-        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
+        
+        # 2. ORDEN CLAVE: Para que Diseño sea el primero ARRIBA en el gráfico, 
+        # Plotly necesita que sea el ÚLTIMO en el DataFrame si no usamos reversed,
+        # o el PRIMERO si ordenamos de forma ascendente y quitamos reversed.
+        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
         
         fig = px.timeline(
             df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
             facet_col="Proyecto", facet_col_wrap=1,
             color_discrete_map="identity",
-            category_orders={"Etapa": ORDEN_ETAPAS} # <--- Forzar orden visual
+            category_orders={"Etapa": ORDEN_ETAPAS[::-1]} # <--- Invertimos la categoría aquí
         )
 
-        # 2. AJUSTE DE EJES (Orden correcto y grilla)
+        # 3. CONFIGURACIÓN DE EJES (Sin autorange reversed para evitar conflictos)
         fig.update_yaxes(
-            autorange="reversed", # <--- Pone Diseño arriba
+            autorange=True,      # <--- Cambiado de "reversed" a True
             showgrid=True, 
             gridcolor='rgba(128,128,128,0.1)',
-            fixedrange=True # Evita zoom accidental en Y
+            fixedrange=True
         )
 
-        # 3. COMPACTACIÓN DE BARRAS (Gantt más delgado)
+        # 4. COMPACTACIÓN Y DISEÑO
         fig.update_layout(
             barmode='group',
-            bargap=0.4,           # <--- Espacio entre bloques de etapas (hace las barras delgadas)
-            bargroupgap=0.1,      # <--- Espacio entre la barra celeste y la de color
-            height=250 * len(proyectos_sel), # <--- Altura reducida (antes era 450)
+            bargap=0.4,           
+            bargroupgap=0.1,      
+            height=200 + (150 * len(proyectos_sel)), # Altura dinámica más eficiente
             margin=dict(l=10, r=10, t=40, b=10),
             showlegend=False
         )
 
-        # 4. REFINAMIENTO VISUAL
-        fig.update_traces(
-            marker_line_width=0, # Quitar bordes para que se vea más limpio
-            opacity=0.85
-        )
+        fig.update_traces(marker_line_width=0, opacity=0.85)
 
         # Línea de tiempo "Hoy"
         fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=1.5, line_dash="solid", line_color="red")
