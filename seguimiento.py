@@ -155,10 +155,9 @@ def mostrar(supervisor_id=None):
                 supabase.table("seguimiento").upsert(lote_save, on_conflict="producto_id, hito").execute()
             
             # AGREGAR ESTA LÍNEA AQUÍ:
-            from base_datos import actualizar_avance_real
-            actualizar_avance_real(id_p)
-            
-            st.success("✅ Datos guardados y avance actualizado."); st.rerun()
+            from base_datos import sincronizar_avances_etapas
+            sincronizar_avances_etapas(id_p)
+            st.success("✅ Avances consolidados correctamente.")
         except Exception as e: st.error(f"Error: {e}")
 
     if act5.button("🗑️ Descartar", type="secondary", use_container_width=True, key="btn_des_final"):
