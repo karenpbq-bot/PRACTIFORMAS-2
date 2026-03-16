@@ -38,13 +38,20 @@ def mostrar():
             mat = col_f.text_input("Material / Color", key="in_p_mat")
             rot = col_g.selectbox("Rotación", [0, 1], help="0: No / 1: Si", key="in_p_rot")
             
-            # ... (código previo de tapacantos)
-            tf, tp, td, ti = t1.text_input("Frontal (F)"), t2.text_input("Posterior (P)"), t3.text_input("Derecho (D)"), t4.text_input("Izquierdo (I)")
+           # --- AJUSTE DE TAPACANTOS (Definición de columnas para evitar NameError) ---
+            st.write("**Tapacantos (mm)**")
+            t1, t2, t3, t4 = st.columns(4) # <--- ESTO FALTABA
             
-            # BLOQUE A RECUPERAR:
+            tf = t1.text_input("Frontal (F)", key="p_tf_in")
+            tp = t2.text_input("Posterior (P)", key="p_tp_in")
+            td = t3.text_input("Derecho (D)", key="p_td_in")
+            ti = t4.text_input("Izquierdo (I)", key="p_ti_in")
+            
+            # BLOQUE DE OBSERVACIONES (Recuperado y con Key única)
             obs = st.text_area("Observaciones específicas de la pieza", key="p_obs_in")
             
             if st.button("➕ Añadir a Matriz", key="btn_add_p"):
+                # Aseguramos que se guarden todos los campos técnicos y dimensiones
                 st.session_state.tmp_piezas.append({
                     "descripcion": desc, 
                     "veta": veta, 
@@ -57,10 +64,9 @@ def mostrar():
                     "tc_derecho": td, 
                     "tc_izquierdo": ti, 
                     "rotacion": rot, 
-                    "observaciones": obs  # <--- Asegúrate de que esta línea esté presente
+                    "observaciones": obs
                 })
                 st.rerun()
-
         if st.session_state.tmp_piezas:
             st.write("### 📋 Bloque de Piezas Consolidado")
             st.dataframe(pd.DataFrame(st.session_state.tmp_piezas), use_container_width=True)
