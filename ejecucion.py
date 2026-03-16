@@ -5,24 +5,22 @@ from datetime import datetime, timedelta
 from base_datos import conectar, obtener_proyectos, obtener_gantt_real_data
 
 # =========================================================
-# 1. CONFIGURACIÓN Y FUNCIÓN DE COLOR DINÁMICO
+# 1. CONFIGURACIÓN Y CONSTANTES (ESQUELETO INAMOVIBLE)
 # =========================================================
 ORDEN_ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
 
 def obtener_color_semaforo(avance):
-    """Calcula el color con matices según el % de avance."""
+    """Calcula el color con matices según el % de avance del proyecto."""
+    avance = max(0, min(100, avance))
     if avance < 50:
-        # Rojo matizado: más oscuro cuanto menos avance
-        val = int(100 + (avance * 2))
-        return f'rgb({val}, 0, 0)'
+        val = int(100 + (avance * 2.5))
+        return f'rgb({val}, 40, 40)' # Rojo matizado
     elif avance <= 75:
-        # Amarillo/Naranja matizado
-        val = int(150 + (avance - 50) * 4)
-        return f'rgb({val}, {val}, 0)'
+        val = int(160 + (avance - 50) * 3)
+        return f'rgb({val}, {val}, 0)' # Amarillo/Ocre
     else:
-        # Verde matizado: más brillante al llegar al 100%
-        val = int(100 + (avance - 75) * 6)
-        return f'rgb(0, {val}, 0)'
+        val = int(120 + (avance - 75) * 5)
+        return f'rgb(30, {val}, 30)' # Verde matizado
 
 def mostrar():
     st.header("📊 Tablero de Control: Planificado vs. Real")
@@ -30,7 +28,7 @@ def mostrar():
     
     with st.sidebar:
         st.divider()
-        st.subheader("Opciones de Visualización")
+        st.subheader("Opciones de Vista")
         solo_real = st.toggle("Ocultar Planificación", value=False)
     
     with st.container(border=True):
@@ -55,16 +53,24 @@ def mostrar():
             if not res_p.data: continue
             p_data = res_p.data[0]
             
-            # --- CÁLCULO DE AVANCE PARA COLORES ---
-            # Obtenemos el avance actual del proyecto para usarlo en el color real
             avance_p = p_data.get('avance', 0)
             color_dinamico = obtener_color_semaforo(avance_p)
 
-            # A. DATA PLANIFICADA (BARRAS GRISES - ESQUELETO)
+            # --- A. ASEGURAR ESQUELETO DE 5 ETAPAS (FORZADO) ---
+            # Insertamos barras invisibles para que el eje Y siempre tenga las 5 filas
+            for etapa_fija in ORDEN_ETAPAS:
+                data_final.append(dict(
+                    Proyecto=p_nom, Etapa=etapa_fija, 
+                    Inicio=datetime.now().strftime('%Y-%m-%d'), 
+                    Fin=datetime.now().strftime('%Y-%m-%d'), 
+                    Color="rgba(0,0,0,0)", Tipo="Esqueleto"
+                ))
+
+            # --- B. DATA PLANIFICADA (BARRAS GRISES) ---
             if not solo_real:
                 map_cols = [
-                    ("Diseño", 'p_dis_i', 'p_dis_f', "#BDC3C7"), # Gris Perla
-                    ("Fabricación", 'p_fab_i', 'p_fab_f', "#5D6D7E"), # Gris Industrial
+                    ("Diseño", 'p_dis_i', 'p_dis_f', "#BDC3C7"),
+                    ("Fabricación", 'p_fab_i', 'p_fab_f', "#5D6D7E"),
                     ("Traslado", 'p_tra_i', 'p_tra_f', "#BDC3C7"),
                     ("Instalación", 'p_ins_i', 'p_ins_f', "#BDC3C7"),
                     ("Entrega", 'p_ent_i', 'p_ent_f', "#BDC3C7")
@@ -76,7 +82,7 @@ def mostrar():
                             Fin=p_data[f_c], Color=col, Tipo="Planificado"
                         ))
             
-            # B. DATA REAL (MAPEO DE HITOS)
+            # --- C. DATA REAL (MAPEO DE HITOS) ---
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
@@ -84,7 +90,6 @@ def mostrar():
                         str_f = str(row['fecha']).strip()
                         fecha_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else datetime.strptime(str_f, '%Y-%m-%d')
                         
-                        # Mapeo a las 5 etapas
                         hito_l = row['hito'].lower()
                         if "disen" in hito_l: et_m = "Diseño"
                         elif any(x in hito_l for x in ["fabric", "corte", "armad"]): et_m = "Fabricación"
@@ -99,51 +104,45 @@ def mostrar():
                         ))
                     except: continue
 
-        if not data_final:
-            st.warning("No hay datos suficientes."); return
-
-        # --- CONSTRUCCIÓN DEL GRÁFICO ---
+        # --- D. CONSTRUCCIÓN DEL GRÁFICO ---
         df_fig = pd.DataFrame(data_final)
         
-        # 1. Forzamos el orden de las etapas (Diseño arriba)
+        # Forzamos las categorías para que no desaparezcan
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
         df_fig = df_fig.sort_values(['Proyecto', 'Etapa'], ascending=[True, False])
         
         fig = px.timeline(
             df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
             facet_col="Proyecto", facet_col_wrap=1,
-            color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS}
+            color_discrete_map="identity", 
+            category_orders={"Etapa": ORDEN_ETAPAS}
         )
 
-        # 2. CORRECCIÓN DE ORDEN Y RANGO (MES A MES)
-        # Forzamos que el eje Y no se invierta
+        # autorange="reversed" + Categorical asegura Diseño arriba
         fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor='rgba(128,128,128,0.2)')
 
-        # Ajuste de rango de 4 meses para ver todo el planificado
-        f_min = pd.to_datetime(df_fig['Inicio']).min()
-        f_max = f_min + timedelta(days=120)
-
+        # Rango de 4 meses para perspectiva gerencial
+        f_min_df = pd.to_datetime(df_fig[df_fig['Tipo'] != "Esqueleto"]['Inicio']).min()
+        if pd.isna(f_min_df): f_min_base = datetime.now()
+        else: f_min_base = f_min_df
+        
         fig.update_xaxes(
-            range=[f_min, f_max],
-            dtick="M1",            # Una marca por mes
-            tickformat="%b %Y",    # Mar 2026
-            showgrid=True, 
-            gridcolor='rgba(128,128,128,0.3)', 
-            griddash='dot'
+            range=[f_min_base - timedelta(days=7), f_min_base + timedelta(days=120)],
+            dtick="M1", 
+            tickformat="%b %Y", 
+            showgrid=True, gridcolor='rgba(128,128,128,0.3)', griddash='dot'
         )
 
         fig.update_layout(
-            barmode='group',       # Barras una debajo de otra por etapa
+            barmode='group',
             height=450 * len(proyectos_sel), 
             margin=dict(l=10, r=10, t=50, b=10),
             showlegend=False,
-            bargap=0.3
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
         )
 
-        # Resaltado de barras
-        fig.update_traces(marker_line_color="white", marker_line_width=1, opacity=0.9)
-
-        # Línea de fecha actual
+        fig.update_traces(marker_line_color="white", marker_line_width=1)
         fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
 
         st.plotly_chart(fig, use_container_width=True)
