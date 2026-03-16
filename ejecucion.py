@@ -121,35 +121,71 @@ def mostrar():
                         ))
                     except: 
                         continue
-      # --- D. GENERACIÓN DEL GRÁFICO (ORDEN Y ESCALA) ---
+     
+        # --- D. GENERACIÓN DEL GRÁFICO (RECONSTRUCCIÓN TOTAL) ---
+        if not data_final:
+            st.warning("No hay datos para mostrar."); return
+
         df_fig = pd.DataFrame(data_final)
-        df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
         
-        # Ordenamos ASCENDENTE para que el primero (Diseño) se dibuje arriba con autorange reversed
+        # 1. NORMALIZACIÓN CRÍTICA DE FECHAS (Evita que el gráfico desaparezca)
+        df_fig['Inicio'] = pd.to_datetime(df_fig['Inicio'], errors='coerce')
+        df_fig['Fin'] = pd.to_datetime(df_fig['Fin'], errors='coerce')
+        df_fig = df_fig.dropna(subset=['Inicio', 'Fin']) 
+
+        # 2. CONFIGURACIÓN DEL ORDEN (Diseño arriba)
+        df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
+        # Ordenamos de forma Ascendente para que 'reversed' en el eje Y coloque el 1ro arriba
         df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
         
         fig = px.timeline(
-            df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
-            facet_col="Proyecto", facet_col_wrap=1,
+            df_fig, 
+            x_start="Inicio", 
+            x_end="Fin", 
+            y="Etapa", 
+            color="Color",
+            facet_col="Proyecto", 
+            facet_col_wrap=1,
             color_discrete_map="identity",
-            category_orders={"Etapa": ORDEN_ETAPAS}
+            category_orders={"Etapa": ORDEN_ETAPAS} 
         )
 
-        # FIJAR ESCALA 4 MESES
-        f_plan = pd.to_datetime(df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio'])
-        f_min_x = f_plan.min() if not f_plan.empty else datetime.now()
-        
+        # 3. CONFIGURACIÓN EJE X (FIJAR 120 DÍAS / 4 MESES)
+        # Calculamos el inicio basado exclusivamente en la planificación para que no se mueva
+        f_plan = df_fig[df_fig['Tipo'] == "1_Planificado"]['Inicio']
+        if not f_plan.empty:
+            f_min_x = f_plan.min()
+        else:
+            f_min_x = pd.Timestamp.now()
+
         fig.update_xaxes(
             range=[f_min_x - timedelta(days=2), f_min_x + timedelta(days=120)],
-            dtick="M1", tickformat="%b %Y", showgrid=True
+            dtick="M1", 
+            tickformat="%b %Y", 
+            showgrid=True,
+            gridcolor='rgba(128,128,128,0.2)'
         )
 
-        # ORDEN DE ARRIBA HACIA ABAJO
-        fig.update_yaxes(autorange="reversed", showgrid=True)
+        # 4. CONFIGURACIÓN EJE Y (DISEÑO ARRIBA)
+        fig.update_yaxes(
+            autorange="reversed", 
+            showgrid=True,
+            gridcolor='rgba(128,128,128,0.1)'
+        )
 
+        # 5. DISEÑO Y GROSOR
         fig.update_layout(
             barmode='group',
             bargap=0.5,
-            height=200 + (150 * len(proyectos_sel)),
+            height=220 * len(proyectos_sel), 
+            margin=dict(l=10, r=10, t=50, b=10),
             showlegend=False
         )
+
+        fig.update_traces(marker_line_width=0, opacity=0.9)
+        
+        # Línea de "Hoy"
+        hoy_ts = pd.Timestamp.now().timestamp() * 1000
+        fig.add_vline(x=hoy_ts, line_width=1.5, line_dash="dash", line_color="red")
+
+        st.plotly_chart(fig, use_container_width=True)
