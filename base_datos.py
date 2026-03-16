@@ -47,24 +47,33 @@ def obtener_supervisores():
 # =========================================================
 
 def obtener_proyectos(palabra_clave=""):
-    """Buscador Universal: Filtra por Código, Nombre o Cliente e incluye fechas planificadas."""
-    supabase = conectar()
-    # AGREGAMOS LAS COLUMNAS DE FECHAS AL SELECT (p_...)
-    query = supabase.table("proyectos").select(
-        "id, codigo, proyecto_text, cliente, estatus, avance, partida, "
-        "p_dis_i, p_dis_f, p_fab_i, p_fab_f, p_tra_i, p_tra_f, p_ins_i, p_ins_f, p_ent_i, p_ent_f"
-    )
-    
-    if palabra_clave:
-        query = query.or_(f"codigo.ilike.%{palabra_clave}%,proyecto_text.ilike.%{palabra_clave}%,cliente.ilike.%{palabra_clave}%")
-    
-    res = query.execute()
-    df = pd.DataFrame(res.data)
-    
-    if not df.empty:
-        df['proyecto_display'] = "[" + df['codigo'].astype(str) + "] " + df['proyecto_text']
+    """Buscador Universal: Filtra por Código, Nombre o Cliente."""
+    try:
+        supabase = conectar()
+        # Usamos "*" para traer todas las columnas disponibles y evitar errores de nombres
+        query = supabase.table("proyectos").select("*")
         
-    return df
+        if palabra_clave:
+            # Lógica OR para búsqueda
+            query = query.or_(f"codigo.ilike.%{palabra_clave}%,proyecto_text.ilike.%{palabra_clave}%,cliente.ilike.%{palabra_clave}%")
+        
+        res = query.execute()
+        
+        # Verificamos si hay error en la respuesta antes de convertir a DataFrame
+        if hasattr(res, 'error') and res.error:
+            st.error(f"Error de base de datos: {res.error}")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(res.data)
+        
+        if not df.empty:
+            # Crear etiqueta para selectbox
+            df['proyecto_display'] = "[" + df['codigo'].astype(str) + "] " + df['proyecto_text']
+            
+        return df
+    except Exception as e:
+        st.error(f"Error crítico en la consulta: {e}")
+        return pd.DataFrame()
 
 def crear_proyecto(codigo, nombre, cliente, partida):
     """Inserta un nuevo proyecto con su DNI/Código único."""
