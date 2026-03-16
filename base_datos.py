@@ -202,15 +202,30 @@ def obtener_gantt_real_data(id_p):
     return pd.DataFrame(res.data)
 
 def actualizar_avance_real(id_p):
-    """Calcula el avance basado en 8 hitos por producto."""
-    supabase = conectar()
-    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
-    total_esperado = len(prods.data) * 8
-    if total_esperado == 0: return
-    ids = [p['id'] for p in prods.data]
-    segs = supabase.table("seguimiento").select("id").in_("producto_id", ids).execute()
-    nuevo_avance = (len(segs.data) / total_esperado) * 100
-    supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
+    """Calcula el avance basado en la ponderación oficial y actualiza la tabla proyectos."""
+    try:
+        supabase = conectar()
+        pesos = obtener_pesos_seguimiento() # Usa el diccionario de 8 hitos
+        prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
+        
+        if not prods.data: return
+        
+        num_productos = len(prods.data)
+        ids = [p['id'] for p in prods.data]
+        
+        # Obtenemos todos los hitos marcados
+        res_seg = supabase.table("seguimiento").select("hito").in_("producto_id", ids).execute()
+        
+        # Calculamos puntos totales
+        puntos_totales = sum([pesos.get(s['hito'], 0) for s in res_seg.data])
+        
+        # El avance es la suma de puntos dividida entre el número de productos
+        # (Porque cada producto puede sumar máximo 100 puntos)
+        nuevo_avance = round(puntos_totales / num_productos, 2)
+        
+        supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
+    except Exception as e:
+        print(f"Error actualizando avance: {e}")
 
 # =========================================================
 # 6. MOTOR DE CÁLCULO PARA GANTT PONDERADO
