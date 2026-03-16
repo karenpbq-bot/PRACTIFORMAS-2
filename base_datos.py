@@ -29,14 +29,13 @@ def validar_usuario(usuario, clave):
 def obtener_supervisores():
     try:
         supabase = conectar()
-        # Cambiamos nombre_real por nombre_completo según lo visto en login.py
+        # Seleccionamos 'nombre_completo' que es el nombre real de tu columna
         res = supabase.table("usuarios").select("id, nombre_completo, rol").in_("rol", ['Administrador', 'Gerente', 'Supervisor']).execute()
         df = pd.DataFrame(res.data)
         
-        # Renombramos para que el resto del código (proyectos.py) no falle
-        if not df.empty and 'nombre_completo' in df.columns:
+        if not df.empty:
+            # Renombramos internamente para que el resto de la app no falle
             df = df.rename(columns={'nombre_completo': 'nombre_real'})
-            
         return df
     except Exception as e:
         st.error(f"Error al obtener supervisores: {e}")
