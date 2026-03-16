@@ -169,5 +169,7 @@ def mostrar():
 
         else:
             st.info("⚠️ Selecciona un proyecto en la pestaña anterior para gestionar sus productos.")
-        else:
-            st.info("⚠️ Selecciona un proyecto en la pestaña anterior para gestionar sus productos.")
+
+
+
+
