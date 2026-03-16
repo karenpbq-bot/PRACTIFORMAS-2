@@ -147,7 +147,10 @@ def mostrar():
                             try:
                                 conectar().table("productos").insert({
                                     "proyecto_id": st.session_state.id_p_sel,
-                                    "ubicacion": u, "tipo": t, "ctd": c, "ml": m
+                                    "ubicacion": u, 
+                                    "tipo": t, 
+                                    "ctd": int(c), # <--- Aquí aseguramos la cantidad
+                                    "ml": m
                                 }).execute()
                                 st.success("Producto añadido correctamente")
                                 st.rerun()
