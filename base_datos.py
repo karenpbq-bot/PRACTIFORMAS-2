@@ -306,4 +306,18 @@ def obtener_fechas_planificadas(id_proyecto):
     ).eq("id", id_proyecto).single().execute()
     return res.data if res.data else {}
 
+def crear_usuario(nombre_usuario, clave, nombre_completo, rol):
+    """Inserta un nuevo usuario en la base de datos."""
+    try:
+        supabase = conectar()
+        data = {
+            "nombre_usuario": nombre_usuario,
+            "contrasena": clave,
+            "nombre_completo": nombre_completo,
+            "rol": rol
+        }
+        return supabase.table("usuarios").insert(data).execute()
+    except Exception as e:
+        st.error(f"Error en base de datos: {e}")
+        return None
 
