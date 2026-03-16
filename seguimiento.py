@@ -131,11 +131,50 @@ def mostrar(supervisor_id=None):
     act3.metric("Avance Global", f"{p_tot}%")
     
     if act4.button("💾 Guardar Avance", type="primary", use_container_width=True):
-        f_cierre = datetime.now().strftime("%d/%m/%Y")
-        conectar().table("proyectos").update({"avance": p_tot}).eq("id", id_p).execute()
-        try: conectar().table("cierres_diarios").insert({"proyecto_id": id_p, "fecha": f_cierre, "hora": datetime.now().strftime("%H:%M:%S")}).execute()
-        except: pass
-        st.success(f"Guardado el {f_cierre}"); st.rerun()
+        ahora = datetime.now()
+        f_cierre = ahora.strftime("%d/%m/%Y")
+        
+        try:
+            # --- LÓGICA DE AUTOCOMPLETADO (CASCADA) POST-CIERRE ---
+            # Obtenemos todo el seguimiento actual del proyecto
+            seguimientos_actuales = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
+            df_seg_actual = pd.DataFrame(seguimientos_actuales.data)
+            
+            lote_completado = []
+            
+            for pid in prods_all['id'].tolist():
+                # Buscamos cuál es el hito más alto marcado para este producto
+                hitos_marcados = df_seg_actual[df_seg_actual['producto_id'] == pid]['hito'].tolist()
+                
+                if hitos_marcados:
+                    # Encontrar el índice más alto según nuestra HITOS_LIST
+                    indices = [HITOS_LIST.index(h) for h in hitos_marcados]
+                    max_idx = max(indices)
+                    
+                    # Generamos registros para todos los hitos anteriores que falten
+                    for i in range(max_idx):
+                        if HITOS_LIST[i] not in hitos_marcados:
+                            lote_completado.append({
+                                "producto_id": pid,
+                                "hito": HITOS_LIST[i],
+                                "fecha": f_cierre # O f_reg.strftime("%d/%m/%Y")
+                            })
+
+            # Inserción masiva de los hitos faltantes
+            if lote_completado:
+                supabase.table("seguimiento").upsert(lote_completado, on_conflict="producto_id, hito").execute()
+
+            # Guardar avance y cierre diario
+            supabase.table("proyectos").update({"avance": p_tot}).eq("id", id_p).execute()
+            try:
+                supabase.table("cierres_diarios").insert({"proyecto_id": id_p, "fecha": f_cierre, "hora": ahora.strftime("%H:%M:%S")}).execute()
+            except: pass
+            
+            st.success(f"✅ ¡Avance procesado y autocompletado con éxito!")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error en el guardado masivo: {e}")
 
     # --- MATRIZ CON STICKY HEADER ---
     st.markdown('<div class="sticky-top">', unsafe_allow_html=True)
@@ -168,8 +207,9 @@ def mostrar(supervisor_id=None):
                 # LÓGICA ÁGIL SIN RERUN
                 if cols[i+1].checkbox("", key=f"c_{p['id']}_{h}", value=existe, disabled=bloqueado, label_visibility="collapsed"):
                     if not existe:
-                        registrar_hitos_cascada(p['id'], h, f_reg.strftime("%d/%m/%Y"))
-                        st.toast(f"✅ {h} marcado")
+                        # Ahora solo registra este hito, la cascada vendrá al final
+                        registrar_hito_individual(p['id'], h, f_reg.strftime("%d/%m/%Y"))
+                        st.toast(f"📍 Marcado: {h}")
                 elif existe and not bloqueado:
                     conectar().table("seguimiento").delete().eq("producto_id", p['id']).eq("hito", h).execute()
                     st.toast(f"🗑️ {h} eliminado")
