@@ -287,4 +287,12 @@ def obtener_datos_gantt_procesados(id_proyecto):
             
     return procesado
 
+def obtener_fechas_planificadas(id_proyecto):
+    """Extrae las fechas contractuales de la tabla proyectos para comparar en el Gantt."""
+    supabase = conectar()
+    res = supabase.table("proyectos").select(
+        "p_dis_i, p_dis_f, p_fab_i, p_fab_f, p_tra_i, p_tra_f, p_ins_i, p_ins_f, p_ent_i, p_ent_f"
+    ).eq("id", id_proyecto).single().execute()
+    return res.data if res.data else {}
+
 
