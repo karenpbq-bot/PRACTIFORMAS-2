@@ -109,21 +109,31 @@ def mostrar():
             st.warning("No hay datos para mostrar."); return
 
         df_fig = pd.DataFrame(data_final)
+        
+        # 1. Definimos el orden lógico
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
         
-        # Ordenamos normal para que el category_orders tome el control
+        # 2. ORDENAMIENTO PARA PLOTLY:
+        # Ordenamos de forma ASCENDENTE. Plotly dibuja de abajo hacia arriba, 
+        # así que el primero de la lista (Diseño) terminará arriba.
         df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, True, True])
         
         fig = px.timeline(
-            df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
-            facet_col="Proyecto", facet_col_wrap=1,
+            df_fig, 
+            x_start="Inicio", 
+            x_end="Fin", 
+            y="Etapa", 
+            color="Color",
+            facet_col="Proyecto", 
+            facet_col_wrap=1,
             color_discrete_map="identity",
-            # ESTA ES LA CLAVE: Invertimos el orden de las categorías para que la 1ra (Diseño) esté ARRIBA
-            category_orders={"Etapa": ORDEN_ETAPAS[::-1]} 
+            # Forzamos a Plotly a NO invertir el orden que ya le dimos
+            category_orders={"Etapa": ORDEN_ETAPAS} 
         )
 
+        # 3. CONFIGURACIÓN EJES (IMPORTANTE: autorange="reversed")
         fig.update_yaxes(
-            autorange=True, # Quitamos 'reversed' porque ya lo invertimos arriba
+            autorange="reversed", # <--- Esto fuerza que el primero (Diseño) sea el de arriba
             showgrid=True, 
             gridcolor='rgba(128,128,128,0.1)'
         )
