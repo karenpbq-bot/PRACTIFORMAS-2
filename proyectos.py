@@ -68,30 +68,36 @@ def mostrar():
             st.table(df_visual[["Etapa", "Inicio", "Fin", "Días"]])
 
             # 4. BOTÓN DE REGISTRO (Dentro del else para asegurar que existan las fechas)
+            # UBICACIÓN: proyectos.py, dentro del botón "REGISTRAR PROYECTO NUEVO"
             if st.button("🚀 REGISTRAR PROYECTO NUEVO"):
-                if not codigo or not nombre:
-                    st.warning("El Código y Nombre son obligatorios.")
-                elif sum(pcts.values()) != 100:
-                    st.error(f"La suma de porcentajes debe ser 100% (Actual: {sum(pcts.values())}%)")
-                else:
-                    datos_nube = {
-                        "codigo": codigo,
-                        "proyecto_text": nombre,
-                        "cliente": cliente,
-                        "partida": par,
-                        "f_ini": f_ini.isoformat(), # Envía 2024-03-25 a la DB
-                        "f_fin": f_fin.isoformat(),
-                        "p_dis_i": cronograma_data[0]["Inicio"].isoformat(),
-                        "p_dis_f": cronograma_data[0]["Fin"].isoformat(),
-                        "supervisor_id": dict_sups[sup_nom],
-                        "estatus": "Activo",
-                        "avance": 0,
-                        "p_dis_i": str(cronograma_data[0]["Inicio"]), "p_dis_f": str(cronograma_data[0]["Fin"]),
-                        "p_fab_i": str(cronograma_data[1]["Inicio"]), "p_fab_f": str(cronograma_data[1]["Fin"]),
-                        "p_tra_i": str(cronograma_data[2]["Inicio"]), "p_tra_f": str(cronograma_data[2]["Fin"]),
-                        "p_ins_i": str(cronograma_data[3]["Inicio"]), "p_ins_f": str(cronograma_data[3]["Fin"]),
-                        "p_ent_i": str(cronograma_data[4]["Inicio"]), "p_ent_f": str(cronograma_data[4]["Fin"])
-                    }
+                # ... (tus validaciones de código y nombre)
+    
+                # Creamos el diccionario asegurando que TODO sea texto (isoformat)
+                datos_nube = {
+                    "codigo": codigo,
+                    "proyecto_text": nombre,
+                    "cliente": cliente,
+                    "partida": par,
+                    "f_ini": f_ini.isoformat(),  # <--- ELIMINA EL str() Y USA .isoformat()
+                    "f_fin": f_fin.isoformat(),  # <--- ELIMINA EL str() Y USA .isoformat()
+                    "supervisor_id": dict_sups[sup_nom],
+                    "estatus": "Activo",
+                    "avance": 0,
+                    # HACER LO MISMO CON TODAS LAS ETAPAS:
+                    "p_dis_i": cronograma_data[0]["Inicio"].isoformat(), 
+                    "p_dis_f": cronograma_data[0]["Fin"].isoformat(),
+                    "p_fab_i": cronograma_data[1]["Inicio"].isoformat(), 
+                    "p_fab_f": cronograma_data[1]["Fin"].isoformat(),
+                    "p_tra_i": cronograma_data[2]["Inicio"].isoformat(), 
+                    "p_tra_f": cronograma_data[2]["Fin"].isoformat(),
+                    "p_ins_i": cronograma_data[3]["Inicio"].isoformat(), 
+                    "p_ins_f": cronograma_data[3]["Fin"].isoformat(),
+                    "p_ent_i": cronograma_data[4]["Inicio"].isoformat(), 
+                    "p_ent_f": cronograma_data[4]["Fin"].isoformat()
+                }
+    
+    # Ahora el insert ya no dará error de JSON
+    conectar().table("proyectos").insert(datos_nube).execute()
                     
                     try:
                         conectar().table("proyectos").insert(datos_nube).execute()
