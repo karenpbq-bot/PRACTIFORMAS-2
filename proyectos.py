@@ -125,55 +125,59 @@ def mostrar():
                 st.info("Ahora puedes ir a la pestaña **'📦 Matriz de Productos'** para cargar el Excel o agregar ítems manualmente.")
     
     with tab3:
-        if st.session_state.id_p_sel:
+        if st.session_state.get('id_p_sel'):
             st.subheader("📦 Matriz de Productos")
             
-            # --- 1. SECCIÓN: CARGA MANUAL (EN UNA SOLA FILA) ---
-            with st.container(border=True):
-                st.markdown("**➕ Agregar Ítem Individual**")
-                with st.form("form_fila_unica", clear_on_submit=True):
-                    # Creamos 4 columnas para que los campos estén uno al lado del otro
+            # --- 1. SECCIÓN: CARGA MANUAL (PLEGABLE Y EN FILA ÚNICA) ---
+            with st.expander("➕ Agregar Producto", expanded=False):
+                with st.form("form_producto_manual", clear_on_submit=True):
+                    # 4 campos uno al lado del otro
                     c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
                     u = c1.text_input("Ubicación", placeholder="Ej: 101")
                     t = c2.text_input("Tipo", placeholder="Ej: Closet")
                     c = c3.number_input("Cant.", min_value=1, step=1)
                     m = c4.number_input("ML", min_value=0.0, format="%.2f")
                     
-                    # El botón de formulario para procesar la fila
-                    if st.form_submit_button("Añadir Producto"):
+                    if st.form_submit_button("Guardar Producto"):
                         if u and t:
-                            conectar().table("productos").insert({
-                                "proyecto_id": st.session_state.id_p_sel,
-                                "ubicacion": u, "tipo": t, "ctd": c, "ml": m
-                            }).execute()
-                            st.success("Ítem añadido"); st.rerun()
+                            try:
+                                conectar().table("productos").insert({
+                                    "proyecto_id": st.session_state.id_p_sel,
+                                    "ubicacion": u, "tipo": t, "ctd": c, "ml": m
+                                }).execute()
+                                st.success("Producto añadido correctamente")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al guardar: {e}")
                         else:
                             st.warning("Ubicación y Tipo son obligatorios.")
 
-            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (DEBAJO) ---
+            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS ---
             with st.expander("📥 Importar Lista de Productos (Excel/CSV)"):
-                st.info("Asegúrate de que el archivo tenga las columnas: UBICACION, TIPO, CTD, Medidas (ml)")
-                f_up = st.file_uploader("Seleccionar archivo", type=["xlsx", "csv"], key="uploader_matriz")
+                st.info("Columnas requeridas: UBICACION, TIPO, CTD, Medidas (ml)")
+                f_up = st.file_uploader("Seleccionar archivo", type=["xlsx", "csv"], key="uploader_v2")
                 
-                if f_up and st.button("🚀 Iniciar Importación Masiva"):
-                    df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
-                    # Procesamiento del archivo
-                    for _, r in df_ex.iterrows():
-                        conectar().table("productos").insert({
-                            "proyecto_id": st.session_state.id_p_sel,
-                            "ubicacion": str(r['UBICACION']),
-                            "tipo": str(r['TIPO']),
-                            "ctd": int(r['CTD']),
-                            "ml": float(r['Medidas (ml)'])
-                        }).execute()
-                    st.success("¡Lista importada con éxito!"); st.rerun()
+                if f_up and st.button("🚀 Iniciar Importación"):
+                    try:
+                        df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
+                        for _, r in df_ex.iterrows():
+                            conectar().table("productos").insert({
+                                "proyecto_id": st.session_state.id_p_sel,
+                                "ubicacion": str(r['UBICACION']),
+                                "tipo": str(r['TIPO']),
+                                "ctd": int(r['CTD']),
+                                "ml": float(r['Medidas (ml)'])
+                            }).execute()
+                        st.success("Lista importada con éxito")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error en la importación: {e}")
 
-            # --- 3. SECCIÓN: VISUALIZACIÓN DE LA MATRIZ ---
+            # --- 3. VISUALIZACIÓN DE LA MATRIZ ACTUAL ---
             st.divider()
             res_p = conectar().table("productos").select("*").eq("proyecto_id", st.session_state.id_p_sel).execute()
             if res_p.data:
                 df_matriz = pd.DataFrame(res_p.data)
-                # Selector de columnas seguro (evita KeyError)
                 cols_vis = [c for c in ['ubicacion', 'tipo', 'ctd', 'ml'] if c in df_matriz.columns]
                 st.dataframe(df_matriz[cols_vis], hide_index=True, use_container_width=True)
                 
