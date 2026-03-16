@@ -26,9 +26,20 @@ def validar_usuario(usuario, clave):
     return res.data[0] if res.data else None
 
 def obtener_supervisores():
-    supabase = conectar()
-    res = supabase.table("usuarios").select("id, nombre_real, rol").in_("rol", ['Administrador', 'Gerente', 'Supervisor']).execute()
-    return pd.DataFrame(res.data)
+    try:
+        supabase = conectar()
+        # Cambiamos nombre_real por nombre_completo según lo visto en login.py
+        res = supabase.table("usuarios").select("id, nombre_completo, rol").in_("rol", ['Administrador', 'Gerente', 'Supervisor']).execute()
+        df = pd.DataFrame(res.data)
+        
+        # Renombramos para que el resto del código (proyectos.py) no falle
+        if not df.empty and 'nombre_completo' in df.columns:
+            df = df.rename(columns={'nombre_completo': 'nombre_real'})
+            
+        return df
+    except Exception as e:
+        st.error(f"Error al obtener supervisores: {e}")
+        return pd.DataFrame(columns=['id', 'nombre_real', 'rol'])
 
 # =========================================================
 # 3. GESTIÓN DE PROYECTOS (ACTUALIZADA V2)
