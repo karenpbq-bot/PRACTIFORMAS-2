@@ -4,42 +4,45 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from base_datos import conectar, obtener_proyectos, obtener_datos_gantt_procesados
 
+# =========================================================
+# 1. LÓGICA VISUAL: SEMÁFORO GERENCIAL
+# =========================================================
 def obtener_color_estricto(avance):
-    """Semáforo gerencial matizado."""
+    """Devuelve el color matizado según el avance ponderado real."""
     if avance < 50:
-        # Rojo: Intensidad según gravedad
+        # Rojo: De fuerte a naranja
         return f'rgb({int(180 + avance)}, 60, 60)'
     elif avance <= 75:
-        # Amarillo: Ocre a brillante
+        # Amarillo: De ocre a brillante
         return f'rgb({int(200 + (avance-50)*2)}, {int(180 + (avance-50)*2)}, 0)'
     else:
-        # Verde: Lima a Bosque
+        # Verde: De lima a bosque sólido
         return f'rgb(40, {int(120 + (avance-75)*4)}, 40)'
 
 def mostrar():
-    st.title("📈 Tablero de Control de Proyectos (Gantt)")
+    st.title("📊 Control de Ejecución: Planificado vs. Real")
     
-    # --- 1. FILTROS ESTRATÉGICOS ---
+    # --- A. FILTROS Y SELECCIÓN ---
     with st.sidebar:
-        st.subheader("🔍 Localizador de Proyectos")
-        bus_keyword = st.text_input("Buscador (Código, Cliente, Nombre)")
+        st.subheader("🔍 Filtros de Auditoría")
+        bus_keyword = st.text_input("Buscador de Proyectos", placeholder="Código, Cliente, Nombre...")
         df_p = obtener_proyectos(bus_keyword)
         
         if df_p.empty:
-            st.warning("No se encontraron proyectos."); return
+            st.warning("No se encontraron coincidencias."); return
 
         proyectos_selec = st.multiselect("Seleccione Proyectos para Comparar", df_p['proyecto_display'].tolist())
         
         st.divider()
-        modo_vista = st.radio("Modo de Vista", ["Comparativo (Plan vs Real)", "Solo Avance Real (Ejecutado)"])
+        st.write("⚙️ **Ajustes de Vista**")
+        ver_solo_real = st.checkbox("Ocultar Planificación (Ver solo Real)", value=False)
 
     if not proyectos_selec:
-        st.info("Para comenzar, seleccione uno o más proyectos del buscador lateral."); return
+        st.info("💡 Seleccione uno o más proyectos en el buscador lateral para visualizar el cronograma."); return
 
-    # --- 2. CONFIGURACIÓN VISUAL ---
-    # Orden cronológico de arriba hacia abajo
+    # --- B. CONFIGURACIÓN DEL GRÁFICO ---
     ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
-    ETAPAS_REVERSA = ETAPAS[::-1] # Para el eje Y de Plotly
+    ETAPAS_REVERSA = ETAPAS[::-1] # Inversión para que Diseño quede arriba
     
     fig = go.Figure()
     supabase = conectar()
@@ -48,42 +51,43 @@ def mostrar():
         p_row = df_p[df_p['proyecto_display'] == p_display].iloc[0]
         id_p = p_row['id']
         
-        # Traer fechas planificadas de la tabla proyectos
+        # Recuperamos fechas del contrato/plan desde la tabla proyectos
         res_p = supabase.table("proyectos").select("*").eq("id", id_p).execute()
         if not res_p.data: continue
         p_data = res_p.data[0]
 
-        # Traer avance real procesado desde base_datos (Hitos ponderados)
+        # Recuperamos avance real (procesado por base_datos.py en las 5 etapas)
         datos_reales = obtener_datos_gantt_procesados(id_p)
         dict_reales = {d['Etapa']: d for d in datos_reales}
 
         for y_idx, etapa in enumerate(ETAPAS_REVERSA):
-            # Calculamos una posición única en el eje Y para cada barra de cada proyecto
-            # Esto evita que los proyectos se encimen
+            # Posicionamiento absoluto para evitar solapamientos
             pos_y = (i * (len(ETAPAS) * 3)) + (y_idx * 2)
 
-            # --- A. BARRA PLANIFICADA (BASE GRIS) ---
-            map_fechas = {
-                "Diseño": ("p_dis_i", "p_dis_f"), "Fabricación": ("p_fab_i", "p_fab_f"),
-                "Traslado": ("p_tra_i", "p_tra_f"), "Instalación": ("p_ins_i", "p_ins_f"),
-                "Entrega": ("p_ent_i", "p_ent_f")
-            }
-            
-            f_i, f_f = map_fechas[etapa]
-            if p_data.get(f_i) and p_data.get(f_f) and modo_vista == "Comparativo (Plan vs Real)":
-                color_plan = "#4F4F4F" if etapa == "Fabricación" else "#D3D3D3"
-                fig.add_trace(go.Bar(
-                    base=[p_data[f_i]],
-                    x=[(pd.to_datetime(p_data[f_f]) - pd.to_datetime(p_data[f_i])).days],
-                    y=[pos_y + 0.4],
-                    orientation='h',
-                    marker_color=color_plan,
-                    name="Planificado",
-                    hoverinfo="skip", # Menos ruido, solo visual
-                    width=0.4
-                ))
+            # --- 1. GANTT PLANIFICADO (BARRA SUPERIOR - GRIS) ---
+            if not ver_solo_real:
+                map_fechas = {
+                    "Diseño": ("p_dis_i", "p_dis_f"), "Fabricación": ("p_fab_i", "p_fab_f"),
+                    "Traslado": ("p_tra_i", "p_tra_f"), "Instalación": ("p_ins_i", "p_ins_f"),
+                    "Entrega": ("p_ent_i", "p_ent_f")
+                }
+                f_i, f_f = map_fechas[etapa]
+                
+                if p_data.get(f_i) and p_data.get(f_f):
+                    color_plan = "#4F4F4F" if etapa == "Fabricación" else "#D3D3D3"
+                    fig.add_trace(go.Bar(
+                        base=[p_data[f_i]],
+                        x=[(pd.to_datetime(p_data[f_f]) - pd.to_datetime(p_data[f_i])).days],
+                        y=[pos_y + 0.4],
+                        orientation='h',
+                        marker_color=color_plan,
+                        name="Planificado",
+                        hoverinfo="text",
+                        text=f"PLAN: {etapa} - {p_display}",
+                        width=0.4
+                    ))
 
-            # --- B. BARRA EJECUTADA (AVANCE REAL) ---
+            # --- 2. GANTT EJECUTADO (BARRA INFERIOR - SEMÁFORO) ---
             if etapa in dict_reales:
                 dr = dict_reales[etapa]
                 avance = round(dr['Avance'], 1)
@@ -92,31 +96,35 @@ def mostrar():
                 fig.add_trace(go.Bar(
                     base=[dr['Inicio'].strftime('%Y-%m-%d')],
                     x=[(dr['Fin'] - dr['Inicio']).days + 1],
-                    y=[pos_y - 0.4] if modo_vista == "Comparativo (Plan vs Real)" else [pos_y],
+                    y=[pos_y - 0.4] if not ver_solo_real else [pos_y],
                     orientation='h',
                     marker_color=color_real,
-                    text=f"{avance}%", # SOLO EL % SOLICITADO
+                    text=f"{avance}%", 
                     textposition="inside",
-                    insidetextanchor="middle",
-                    textfont=dict(color="white", size=11),
-                    name="Real",
+                    textfont=dict(color="white", size=10),
+                    name="Ejecutado",
                     hoverinfo="text",
-                    hovertext=f"Proyecto: {p_display}<br>Etapa: {etapa}<br>Inicio: {dr['Inicio'].date()}<br>Fin: {dr['Fin'].date()}",
-                    width=0.6 if modo_vista == "Comparativo (Plan vs Real)" else 1.2
+                    hovertext=f"REAL: {etapa}<br>Inicio: {dr['Inicio'].date()}<br>Fin: {dr['Fin'].date()}<br>Avance: {avance}%",
+                    width=0.6 if not ver_solo_real else 1.2
                 ))
 
-    # --- 3. ESTILIZACIÓN DEL GRÁFICO (REGLAS GERENCIALES) ---
+    # --- C. AJUSTES DE ESCALA TEMPORAL (MES A MES) ---
     fig.update_layout(
         barmode='overlay',
         showlegend=False,
         plot_bgcolor="white",
-        height=200 + (len(proyectos_selec) * 400),
+        height=250 + (len(proyectos_selec) * 400),
         xaxis=dict(
             type='date',
-            tickformat='%d %b', # Formato limpio: 15 Mar
-            dtick="M1", # Divisiones mensuales
+            tickformat='%b %Y', # Formato: Mar 2026
+            dtick="M1",         # MARCA PRINCIPAL: CADA MES
             gridcolor="#EEEEEE",
-            minor=dict(dtick=1000*60*60*24*14, showgrid=True, gridcolor="#F5F5F5", griddash="dot") # Quincenas
+            minor=dict(
+                dtick=1000*60*60*24*14, # MARCA SECUNDARIA: CADA 14 DÍAS (QUINCENA)
+                showgrid=True, 
+                gridcolor="#F5F5F5", 
+                griddash="dot"
+            )
         ),
         yaxis=dict(
             tickmode='array',
@@ -124,10 +132,10 @@ def mostrar():
             ticktext=ETAPAS_REVERSA * len(proyectos_selec),
             fixedrange=True
         ),
-        margin=dict(l=200, r=50, t=50, b=50)
+        margin=dict(l=200, r=50, t=100, b=50)
     )
 
-    # Títulos de Proyecto en el lateral izquierdo
+    # Títulos de Proyecto en el eje vertical
     for i, p_display in enumerate(proyectos_selec):
         fig.add_annotation(
             x=-0.01, y=(i * (len(ETAPAS) * 3)) + (len(ETAPAS) - 1),
