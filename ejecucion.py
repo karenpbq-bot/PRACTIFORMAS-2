@@ -81,26 +81,21 @@ def mostrar():
                             Color=c_plan, Tipo="1_Planificado"
                         ))
             
-            # C. Data Real (BARRAS DE AVANCE)
-            df_r = obtener_gantt_real_data(id_p)
-            if not df_r.empty:
-                for _, row in df_r.iterrows():
-                    try:
-                        str_f = str(row['fecha']).strip()
-                        f_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else pd.to_datetime(str_f)
-                        h_l = row['hito'].lower()
-                        
-                        if "diseñ" in h_l: et_m = "Diseño"
-                        elif any(x in h_l for x in ["fabric", "corte", "armad"]): et_m = "Fabricación"
-                        elif any(x in h_l for x in ["obra", "ubicaci", "traslad"]): et_m = "Traslado"
-                        elif any(x in h_l for x in ["estruc", "puer", "frent", "instal"]): et_m = "Instalación"
-                        elif any(x in h_l for x in ["revis", "observ", "entreg"]): et_m = "Entrega"
-                        else: continue
+            # --- C. DATA REAL (DESDE TABLA CONSOLIDADA) ---
+            res_av = supabase.table("avances_etapas").select("*").eq("proyecto_id", id_p).execute()
+            if res_av.data:
+                for row in res_av.data:
+                    if row['porcentaje'] > 0:
+                        # El color se calcula por el % de ESTA etapa individual
+                        color_esta_etapa = obtener_color_semaforo(row['porcentaje'])
                         
                         data_final.append(dict(
-                            Proyecto=p_nom, Etapa=et_m, Inicio=f_dt.strftime('%Y-%m-%d'), 
-                            Fin=(f_dt + timedelta(days=2)).strftime('%Y-%m-%d'), 
-                            Color=color_real, Tipo="2_Real"
+                            Proyecto=p_nom, 
+                            Etapa=row['etapa'], 
+                            Inicio=row['fecha_inicio_real'], 
+                            Fin=row['fecha_fin_real'], 
+                            Color=color_esta_etapa, # <-- AHORA SÍ CAMBIARÁ EL COLOR
+                            Tipo="2_Real"
                         ))
                     except: continue
 
