@@ -81,22 +81,17 @@ def mostrar():
                             Color=c_plan, Tipo="1_Planificado"
                         ))
             
-            # --- C. DATA REAL (DESDE TABLA CONSOLIDADA) ---
+            # Sección C: Data Real
             res_av = supabase.table("avances_etapas").select("*").eq("proyecto_id", id_p).execute()
-            if res_av.data:
-                for row in res_av.data:
-                    if row['porcentaje'] > 0:
-                        # El color se calcula por el % de ESTA etapa individual
-                        color_esta_etapa = obtener_color_semaforo(row['porcentaje'])
-                        
-                        data_final.append(dict(
-                            Proyecto=p_nom, 
-                            Etapa=row['etapa'], 
-                            Inicio=row['fecha_inicio_real'], 
-                            Fin=row['fecha_fin_real'], 
-                            Color=color_esta_etapa, # <-- AHORA SÍ CAMBIARÁ EL COLOR
-                            Tipo="2_Real"
-                        ))
+            for row in res_av.data:
+                if row['porcentaje'] > 0:
+                    # Aquí el color_real se calcula por CADA ETAPA, no por el proyecto global
+                    color_etapa = obtener_color_semaforo(row['porcentaje'])
+                    data_final.append(dict(
+                        Proyecto=p_nom, Etapa=row['etapa'], 
+                        Inicio=row['fecha_inicio_real'], Fin=row['fecha_fin_real'], 
+                        Color=color_etapa, Tipo="2_Real"
+                    ))
                     except: continue
 
         # --- D. RENDERIZADO EN PESTAÑAS ---
