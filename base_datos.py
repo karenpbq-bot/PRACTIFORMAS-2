@@ -47,19 +47,21 @@ def obtener_supervisores():
 # =========================================================
 
 def obtener_proyectos(palabra_clave=""):
-    """Buscador Universal: Filtra por Código, Nombre o Cliente."""
+    """Buscador Universal: Filtra por Código, Nombre o Cliente e incluye fechas planificadas."""
     supabase = conectar()
-    query = supabase.table("proyectos").select("id, codigo, proyecto_text, cliente, estatus, avance, partida")
+    # AGREGAMOS LAS COLUMNAS DE FECHAS AL SELECT (p_...)
+    query = supabase.table("proyectos").select(
+        "id, codigo, proyecto_text, cliente, estatus, avance, partida, "
+        "p_dis_i, p_dis_f, p_fab_i, p_fab_f, p_tra_i, p_tra_f, p_ins_i, p_ins_f, p_ent_i, p_ent_f"
+    )
     
     if palabra_clave:
-        # Lógica OR para palabras clave en múltiples campos
         query = query.or_(f"codigo.ilike.%{palabra_clave}%,proyecto_text.ilike.%{palabra_clave}%,cliente.ilike.%{palabra_clave}%")
     
     res = query.execute()
     df = pd.DataFrame(res.data)
     
     if not df.empty:
-        # Crea la etiqueta para los selectbox: [PTF-001] Proyecto Ejemplo
         df['proyecto_display'] = "[" + df['codigo'].astype(str) + "] " + df['proyecto_text']
         
     return df
