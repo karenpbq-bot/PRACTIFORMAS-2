@@ -4,10 +4,6 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from base_datos import conectar, obtener_proyectos, obtener_gantt_real_data
 
-# =========================================================
-# SECCIÓN 1: CONFIGURACIÓN Y CONSTANTES (FUNCIONALIDAD ORIGINAL)
-# Mantiene el orden estricto de etapas para evitar la inversión del gráfico.
-# =========================================================
 ORDEN_ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
 
 COLORES_REALES = {
@@ -22,14 +18,11 @@ def mostrar():
     st.header("📊 Cronograma Global de Ejecución")
     supabase = conectar()
     
-    # --- 1. CONFIGURACIÓN DE VISTA EN SIDEBAR ---
     with st.sidebar:
         st.divider()
         st.subheader("Configuración de Visualización")
-        solo_real = st.toggle("Ver solo ejecución real", value=False, 
-                              help="Oculta las barras grises de planificación contractual")
+        solo_real = st.toggle("Ver solo ejecución real", value=False)
     
-    # --- 2. SELECCIÓN DE PROYECTOS ---
     with st.container(border=True):
         bus = st.text_input("🔍 Buscar por Proyecto o Cliente...", placeholder="Ej: Casa")
         df_p = obtener_proyectos(bus)
@@ -45,16 +38,19 @@ def mostrar():
 
     if proyectos_sel:
         data_final = []
-        
+        fecha_minima_global = datetime.now() # Para fijar el inicio del gráfico
+
         for p_nom in proyectos_sel:
             id_p = dict_proy[p_nom]
-            
-            # --- CONSULTA NUBE: Recupera datos del proyecto (Sin errores de conexión) ---
             res_p = supabase.table("proyectos").select("*").eq("id", id_p).execute()
             if not res_p.data: continue
             p_data = res_p.data[0]
             
-            # A. DATA PLANIFICADA (Lógica Original Contractual)
+            # Guardamos la fecha de inicio del proyecto para el rango del gráfico
+            if p_data.get('p_dis_i'):
+                f_ini_p = pd.to_datetime(p_data['p_dis_i'])
+                if f_ini_p < fecha_minima_global: fecha_minima_global = f_ini_p
+
             if not solo_real:
                 map_cols = [
                     ("Diseño", 'p_dis_i', 'p_dis_f', "#EBEDEF"),
@@ -70,19 +66,22 @@ def mostrar():
                             Fin=p_data[f_c], Color=col, Tipo="Planificado"
                         ))
             
-            # B. DATA REAL (Lógica de Seguimiento de Nube)
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
                     try:
                         str_f = str(row['fecha']).strip()
                         fecha_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else datetime.strptime(str_f, '%Y-%m-%d')
-                        
                         inicio_real = fecha_dt.strftime('%Y-%m-%d')
-                        fin_real = (fecha_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+                        fin_real = (fecha_dt + timedelta(days=2)).strftime('%Y-%m-%d') # Un poco más ancha para que se vea
                         
-                        # Mapeo inteligente de hitos a etapas del Gantt
-                        et_match = next((et for et in ORDEN_ETAPAS if et[:4].lower() in row['hito'].lower()), "Instalación")
+                        # Mapeo mejorado para asegurar que caigan en las 5 etapas
+                        hito_l = row['hito'].lower()
+                        if "disen" in hito_l: et_match = "Diseño"
+                        elif any(x in hito_l for x in ["fabric", "corte", "canto", "armad"]): et_match = "Fabricación"
+                        elif "tras" in hito_l or "obra" in hito_l: et_match = "Traslado"
+                        elif "entreg" in hito_l or "revisi" in hito_l: et_match = "Entrega"
+                        else: et_match = "Instalación"
                         
                         data_final.append(dict(
                             Proyecto=p_nom, Etapa=et_match, Inicio=inicio_real, 
@@ -91,44 +90,43 @@ def mostrar():
                     except: continue
 
         if not data_final:
-            st.warning("No hay datos para mostrar con los filtros seleccionados."); return
+            st.warning("No hay datos para mostrar."); return
 
-        # =========================================================
-        # SECCIÓN 3: GENERACIÓN DEL GRÁFICO (RESTAURACIÓN DE ORDEN)
-        # Aquí se incluye la lógica que evita la inversión de etapas.
-        # =========================================================
         df_fig = pd.DataFrame(data_final)
-        
-        # DEFINICIÓN DE CATEGORÍA ORDENADA (Evita inversión de eje Y)
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        
-        # ORDENAMIENTO FÍSICO DEL DATAFRAME
-        df_fig = df_fig.sort_values(['Proyecto', 'Etapa'], ascending=[True, False])
+        df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
         
         fig = px.timeline(
             df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
             facet_col="Proyecto", facet_col_wrap=1,
-            color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS}
+            color_discrete_map="identity", 
+            category_orders={"Etapa": ORDEN_ETAPAS},
+            hover_data=["Tipo"]
         )
 
-        # AJUSTES DE DISEÑO ORIGINALES
-        fig.update_yaxes(
-            categoryorder="array",
-            categoryarray=ORDEN_ETAPAS,
-            autorange="reversed", # FORZA DISEÑO ARRIBA
-            showgrid=True
+        # AJUSTES CRÍTICOS PARA VER LAS 5 ETAPAS Y 4 MESES
+        fig.update_yaxes(autorange="reversed", showgrid=True)
+
+        # 1. Fijar rango de 4 meses y marcas mensuales
+        fecha_fin_vista = fecha_minima_global + timedelta(days=120)
+        fig.update_xaxes(
+            range=[fecha_minima_global, fecha_fin_vista], # Rango forzado de 4 meses
+            dtick="M1",            # Una marca por mes
+            tickformat="%b %Y",    # Formato: Mar 2024
+            showgrid=True, 
+            gridcolor='LightGray', 
+            griddash='dot'
         )
 
         fig.update_layout(
-            barmode='overlay', # Mantiene la superposición Planificado vs Real
-            height=200 * len(proyectos_sel), 
+            barmode='group',       # CAMBIO CLAVE: 'group' pone una barra junto a la otra (no encima)
+            height=400 * len(proyectos_sel), # Más alto para que quepan las barras agrupadas
             margin=dict(l=10, r=10, t=30, b=10),
             showlegend=False,
-            bargap=0.1
+            bargap=0.2
         )
 
-        # Cuadrícula semanal y línea roja de fecha actual
-        fig.update_xaxes(dtick="W1", tickformat="%d/%b", showgrid=True, gridcolor='LightGray', griddash='dot')
+        # Línea de HOY
         fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
 
         st.plotly_chart(fig, use_container_width=True)
