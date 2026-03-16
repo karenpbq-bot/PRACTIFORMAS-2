@@ -45,7 +45,7 @@ def mostrar():
                                     default=list(dict_proy.keys())[:1])
 
     if proyectos_sel:
-        # --- D. CONSTRUCCIÓN DEL DATASET PARA EL GRÁFICO ---
+        # --- D. CONSTRUCCIÓN DEL DATASET (LÓGICA DE BLOQUES SEPARADOS) ---
         data_final = []
         
         for p_nom in proyectos_sel:
@@ -57,7 +57,7 @@ def mostrar():
             avance_p = p_data.get('avance', 0)
             color_real = obtener_color_semaforo(avance_p)
 
-            # 1. FORZAR ESQUELETO (Garantiza que siempre se vean las 5 filas)
+            # 1. FORZAR ESQUELETO FIJO (Para que Diseño siempre aparezca arriba)
             for etapa_fija in ORDEN_ETAPAS:
                 data_final.append(dict(
                     Proyecto=p_nom, Etapa=etapa_fija, 
@@ -65,9 +65,9 @@ def mostrar():
                     Color="rgba(0,0,0,0)", Tipo="3_Esqueleto" 
                 ))
 
-            # 2. DATA PLANIFICADA (BARRAS CELESTES)
+            # 2. BLOQUE PLANIFICADO (CELESTE - SUPERIOR)
             if not solo_real:
-                color_planificado = "#87CEEB" # Celeste / SkyBlue
+                color_planificado = "#87CEEB" # Celeste SkyBlue
                 map_cols = [
                     ("Diseño", 'p_dis_i', 'p_dis_f'), 
                     ("Fabricación", 'p_fab_i', 'p_fab_f'), 
@@ -82,7 +82,7 @@ def mostrar():
                             Fin=p_data[f_c], Color=color_planificado, Tipo="1_Planificado"
                         ))
             
-            # 3. DATA REAL (EJECUTADO)
+            # 3. BLOQUE REAL (EJECUTADO - INFERIOR)
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
@@ -104,43 +104,23 @@ def mostrar():
                         ))
                     except: continue
 
-        # --- E. GENERACIÓN DEL GRÁFICO ---
+        # --- E. RENDERIZADO DEL GRÁFICO ---
         df_fig = pd.DataFrame(data_final)
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        # Ordenamos por Tipo para que el celeste (1) quede sobre el real (2)
+        # Ordenamos: Planificado (1) antes que Real (2) para que el celeste quede arriba
         df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
         
         fig = px.timeline(
-            df_fig, x_start=\"Inicio\", x_end=\"Fin\", y=\"Etapa\", color=\"Color\",
-            facet_col=\"Proyecto\", facet_col_wrap=1,
-            color_discrete_map=\"identity\", category_orders={\"Etapa\": ORDEN_ETAPAS}
+            df_fig, x_start="Inicio", x_end="Fin", y="Etapa", color="Color",
+            facet_col="Proyecto", facet_col_wrap=1,
+            color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS}
         )
 
-        fig.update_yaxes(autorange=\"reversed\", showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+        fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor='rgba(128,128,128,0.2)')
 
-        # RANGO DE 4 MESES PARA PERSPECTIVA GERENCIAL
-        f_min = pd.to_datetime(df_fig[df_fig['Tipo'] != \"3_Esqueleto\"]['Inicio']).min()
-        if pd.isna(f_min): f_min = datetime.now()
-        
-        fig.update_xaxes(
-            range=[f_min - timedelta(days=5), f_min + timedelta(days=120)],
-            dtick=\"M1\", tickformat=\"%b %Y\", showgrid=True, gridcolor='rgba(128,128,128,0.3)', griddash='dot'
-        )
-
-        fig.update_layout(
-            barmode='group', # Barras paralelas: Planificado sobre Real
-            height=450 * len(proyectos_sel), 
-            margin=dict(l=10, r=10, t=50, b=10),
-            showlegend=False
-        )
-
-        fig.update_traces(marker_line_color=\"white\", marker_line_width=1, opacity=0.9)
-        fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=2, line_dash=\"dash\", line_color=\"red\")
-
-        st.plotly_chart(fig, use_container_width=True)
-        # RANGO DE 4 MESES
-        f_min = pd.to_datetime(df_fig[df_fig['Tipo'] != "Z_Esqueleto"]['Inicio']).min()
-        if pd.isna(f_min): f_min = datetime.now()
+        # AJUSTE DE ESCALA: 4 MESES
+        f_val = pd.to_datetime(df_fig[df_fig['Tipo'] != "3_Esqueleto"]['Inicio'])
+        f_min = f_val.min() if not f_val.empty else datetime.now()
         
         fig.update_xaxes(
             range=[f_min - timedelta(days=5), f_min + timedelta(days=120)],
@@ -148,13 +128,12 @@ def mostrar():
         )
 
         fig.update_layout(
-            barmode='group', # Muestra barras paralelas (Plan vs Real)
+            barmode='group', # Pone las barras paralelas por cada etapa
             height=450 * len(proyectos_sel), 
             margin=dict(l=10, r=10, t=50, b=10),
             showlegend=False
         )
 
-        # Visibilidad en modo oscuro
         fig.update_traces(marker_line_color="white", marker_line_width=1, opacity=0.9)
         fig.add_vline(x=datetime.now().timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
 
