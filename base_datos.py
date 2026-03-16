@@ -160,11 +160,23 @@ def registrar_incidencia_detallada(proyecto_id, tipo, motivo, piezas, materiales
 def obtener_incidencias_resumen():
     supabase = conectar()
     try:
-        # Solo pedimos datos de incidencias y el texto del proyecto relacionado
+        # Consultamos incidencias incluyendo el campo proyecto_text de la tabla proyectos
         res = supabase.table("incidencias").select("*, proyectos(proyecto_text)").order("created_at", desc=True).execute()
-        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+        
+        if not res.data:
+            return pd.DataFrame()
+        
+        # PROCESAMIENTO CRÍTICO: Extraer el texto del objeto anidado
+        for registro in res.data:
+            if registro.get('proyectos'):
+                # Pasamos el valor de registro['proyectos']['proyecto_text'] a la raíz del diccionario
+                registro['proyecto_text'] = registro['proyectos'].get('proyecto_text', 'N/A')
+            else:
+                registro['proyecto_text'] = "Sin Proyecto"
+                
+        return pd.DataFrame(res.data)
     except Exception as e:
-        st.error(f"Error en consulta de historial: {e}")
+        print(f"Error en historial: {e}")
         return pd.DataFrame()
 
 def obtener_gantt_real_data(id_p):
