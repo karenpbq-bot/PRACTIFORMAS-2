@@ -15,9 +15,6 @@ MAPEO_HITOS = {
 
 HITOS_LIST = list(MAPEO_HITOS.keys())
 
-def obtener_fecha_formateada():
-    return datetime.now().strftime("%d/%m/%Y")
-
 # =========================================================
 # 2. LÓGICA DE CASCADA Y SEGURIDAD
 # =========================================================
@@ -43,12 +40,11 @@ def registrar_hitos_cascada(p_id, hito_final, fecha_str):
 # 3. INTERFAZ PRINCIPAL
 # =========================================================
 def mostrar(supervisor_id=None):
-    # CSS para Sticky Header, Scroll e Indicadores compactos
     st.markdown("""
         <style>
         .sticky-top { position: sticky; top: 0; background: white; z-index: 1000; padding: 10px 0; border-bottom: 3px solid #FF8C00; }
-        .scroll-area { max-height: 550px; overflow-y: auto; overflow-x: hidden; border: 1px solid #eee; padding: 10px; border-radius: 5px; }
-        div[data-testid="stMetric"] { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 5px; border-radius: 5px; }
+        .scroll-area { max-height: 550px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 5px; }
+        [data-testid="stMetric"] { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 5px; border-radius: 5px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -58,7 +54,7 @@ def mostrar(supervisor_id=None):
     nombre_proy_cabecera = st.session_state.get('p_nom_sel', "Ninguno")
     st.title(f"📈 Seguimiento de Avances: {nombre_proy_cabecera}")
 
-    # --- BLOQUE 1: BÚSQUEDA DE PROYECTO ---
+    # --- BLOQUE: BÚSQUEDA DE PROYECTO (PLEGABLE) ---
     with st.expander("Búsqueda de Proyecto", expanded=not st.session_state.get('id_p_sel')):
         c1, c2 = st.columns([2, 1])
         bus_p = c1.text_input("🔍 Escribe nombre, código o cliente...", key="bus_seg_v2")
@@ -69,23 +65,36 @@ def mostrar(supervisor_id=None):
 
         if not df_p_all.empty:
             opciones = {f"[{r['codigo']}] {r['proyecto_text']} - {r['cliente']}": r['id'] for _, r in df_p_all.iterrows()}
-            sel_n = c2.selectbox("Seleccione Proyecto:", ["-- Seleccionar --"] + list(opciones.keys()))
+            # Usamos index para que el selectbox mantenga la selección
+            lista_opciones = ["-- Seleccionar --"] + list(opciones.keys())
+            idx_previo = lista_opciones.index(st.session_state.p_nom_sel) if st.session_state.get('p_nom_sel') in lista_opciones else 0
+            
+            sel_n = c2.selectbox("Seleccione Proyecto:", lista_opciones, index=idx_previo)
+            
             if sel_n != "-- Seleccionar --":
                 st.session_state.id_p_sel = opciones[sel_n]
                 st.session_state.p_nom_sel = sel_n
-                st.rerun()
+            else:
+                st.session_state.id_p_sel = None
+                st.session_state.p_nom_sel = None
 
     if not st.session_state.get('id_p_sel'):
         st.info("💡 Por favor, seleccione un proyecto para cargar la información."); return
 
+    # --- CARGA INICIAL DE DATOS (FUERA DE BLOQUES PARA EVITAR KEYERROR) ---
     id_p = st.session_state.id_p_sel
+    prods_all = obtener_productos_por_proyecto(id_p)
+    if prods_all.empty:
+        st.warning("El proyecto no tiene productos registrados."); return
 
-    # --- BLOQUE 2: CONFIGURACIÓN AVANZADA Y HERRAMIENTAS ---
+    segs_res = supabase.table("seguimiento").select("*").in_("producto_id", prods_all['id'].tolist()).execute()
+    segs = pd.DataFrame(segs_res.data) if segs_res.data else pd.DataFrame(columns=['producto_id','hito','fecha','observaciones'])
+
+    # --- BLOQUE: CONFIGURACIÓN AVANZADA Y HERRAMIENTAS ---
     with st.expander("CONFIGURACIÓN AVANZADA Y HERRAMIENTAS", expanded=False):
         t1, t2, t3, t4 = st.tabs(["⚖️ Ponderación", "🔍 Filtros de Matriz", "📥 Importar Avances", "📤 Exportación"])
         
         with t1:
-            st.write("Peso porcentual de cada etapa (Suma = 100%):")
             cols_w = st.columns(4)
             pesos = {h: cols_w[i % 4].number_input(f"{h} (%)", value=12.5, step=0.5, key=f"p_{h}") for i, h in enumerate(HITOS_LIST)}
             if sum(pesos.values()) != 100: st.warning(f"Suma actual: {sum(pesos.values())}%")
@@ -100,10 +109,9 @@ def mostrar(supervisor_id=None):
             f_av = st.file_uploader("Cargar Excel/CSV de Seguimiento", type=["xlsx", "csv"])
             if f_av and st.button("🚀 Iniciar Importación"):
                 df_imp = pd.read_excel(f_av) if f_av.name.endswith('xlsx') else pd.read_csv(f_av)
-                prods_db = obtener_productos_por_proyecto(id_p)
                 for _, r_ex in df_imp.iterrows():
-                    match = prods_db[(prods_db['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & 
-                                     (prods_db['tipo'].astype(str) == str(r_ex.get('Tipo','')))]
+                    match = prods_all[(prods_all['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & 
+                                      (prods_all['tipo'].astype(str) == str(r_ex.get('Tipo','')))]
                     if not match.empty:
                         pid = match.iloc[0]['id']
                         for h in reversed(HITOS_LIST):
@@ -114,20 +122,20 @@ def mostrar(supervisor_id=None):
                 st.success("Importación exitosa."); st.rerun()
 
         with t4:
-            st.write("Descargar avance actual basado en la estructura de Eliza:")
-            # Esta lógica se ejecuta aquí pero los datos vienen del filtrado de abajo
-            pass 
+            df_exp = prods_all.copy()
+            for h in HITOS_LIST:
+                df_exp[h] = df_exp['id'].apply(lambda x: segs[(segs['producto_id']==x) & (segs['hito']==h)]['fecha'].iloc[0] if not segs[(segs['producto_id']==x) & (segs['hito']==h)].empty else "")
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_exp[['ubicacion', 'tipo', 'ctd', 'ml'] + HITOS_LIST].to_excel(writer, index=False)
+            st.download_button("📥 Descargar Avance (Excel)", data=output.getvalue(), file_name=f"Avance_{id_p}.xlsx", use_container_width=True)
 
-    # --- CARGA DE DATOS ---
-    prods_all = obtener_productos_por_proyecto(id_p)
-    segs_res = supabase.table("seguimiento").select("*").in_("producto_id", prods_all['id'].tolist()).execute()
-    segs = pd.DataFrame(segs_res.data) if segs_res.data else pd.DataFrame(columns=['producto_id','hito','fecha','observaciones'])
-
+    # --- FILTRADO DE MATRIZ ---
     df_f = prods_all.copy()
     if bus_c1: df_f = df_f[df_f['ubicacion'].str.contains(bus_c1, case=False) | df_f['tipo'].str.contains(bus_c1, case=False)]
     if bus_c2: df_f = df_f[df_f['ubicacion'].str.contains(bus_c2, case=False) | df_f['tipo'].str.contains(bus_c2, case=False)]
 
-    # Cálculo de Avances
+    # --- INDICADORES ---
     def calc_avance(df_m, df_s):
         if df_m.empty: return 0.0
         puntos = sum([pesos.get(h, 0) for h in df_s[df_s['producto_id'].isin(df_m['id'].tolist())]['hito']])
@@ -136,10 +144,10 @@ def mostrar(supervisor_id=None):
     pct_total = calc_avance(prods_all, segs)
     pct_parcial = calc_avance(df_f, segs)
 
-    # --- FILA DE ACCIONES E INDICADORES (IZQUIERDA A DERECHA) ---
+    # --- FILA DE ACCIONES (IZQUIERDA A DERECHA) ---
     st.divider()
     act1, act2, act3, act4 = st.columns([1.5, 1.2, 1.2, 1.5])
-    f_reg = act1.date_input("Fecha Registro", datetime.now(), label_visibility="visible")
+    f_reg = act1.date_input("Fecha Registro", datetime.now())
     act2.metric("Avance Parcial", f"{pct_parcial}%")
     act3.metric("Avance Global", f"{pct_total}%")
     
@@ -148,16 +156,6 @@ def mostrar(supervisor_id=None):
         supabase.table("proyectos").update({"avance": pct_total}).eq("id", id_p).execute()
         supabase.table("cierres_diarios").insert({"proyecto_id": id_p, "fecha": ahora.strftime("%Y-%m-%d"), "hora": ahora.strftime("%H:%M:%S")}).execute()
         st.success("Avance guardado."); st.rerun()
-
-    # Lógica de Exportación (Dentro de Pestaña t4 del Bloque 2)
-    with t4:
-        df_exp = df_f.copy()
-        for h in HITOS_LIST:
-            df_exp[h] = df_exp['id'].apply(lambda x: segs[(segs['producto_id']==x) & (segs['hito']==h)]['fecha'].iloc[0] if not segs[(segs['producto_id']==x) & (segs['hito']==h)].empty else "")
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_exp[['ubicacion', 'tipo', 'ctd', 'ml'] + HITOS_LIST].to_excel(writer, index=False)
-        st.download_button("📥 Descargar Avance (Excel)", data=output.getvalue(), file_name=f"Avance_{id_p}.xlsx", use_container_width=True)
 
     # --- MATRIZ CON STICKY HEADER ---
     st.markdown('<div class="sticky-top">', unsafe_allow_html=True)
@@ -184,7 +182,6 @@ def mostrar(supervisor_id=None):
                 m_data = segs[(segs['producto_id'] == p['id']) & (segs['hito'] == h)]
                 existe = not m_data.empty
                 tiene_post = not segs[(segs['producto_id'] == p['id']) & (segs['hito'].isin(HITOS_LIST[i+1:]))].empty
-                
                 bloqueo = (existe and rol == "Supervisor") or tiene_post
                 
                 if cols[i+1].checkbox("", key=f"c_{p['id']}_{h}", value=existe, disabled=bloqueo, label_visibility="collapsed"):
@@ -195,16 +192,15 @@ def mostrar(supervisor_id=None):
                     supabase.table("seguimiento").delete().eq("producto_id", p['id']).eq("hito", h).execute()
                     st.rerun()
             
-            # Recuperar Notas
-            nota_actual = m_data['observaciones'].iloc[0] if existe and 'observaciones' in m_data.columns and pd.notnull(m_data['observaciones'].iloc[0]) else ""
-            nueva_nota = cols[-1].text_input("Nota", value=nota_actual, key=f"obs_{p['id']}", label_visibility="collapsed")
-            if nueva_nota != nota_actual:
-                supabase.table("seguimiento").update({"observaciones": nueva_nota}).eq("producto_id", p['id']).eq("hito", HITOS_LIST[0]).execute()
+            # Notas (Guardado Atómico)
+            n_val = m_data['observaciones'].iloc[0] if existe and 'observaciones' in m_data.columns and pd.notnull(m_data['observaciones'].iloc[0]) else ""
+            nueva_n = cols[-1].text_input("Nota", value=n_val, key=f"obs_{p['id']}", label_visibility="collapsed")
+            if nueva_n != n_val:
+                supabase.table("seguimiento").update({"observaciones": nueva_n}).eq("producto_id", p['id']).eq("hito", HITOS_LIST[0]).execute()
 
     if agrupar_por != "Sin grupo":
-        campo = agrupar_por.lower()
-        for n, g in df_f.groupby(campo):
-            st.markdown(f"**📂 {agrupar_por}: {n}**")
+        for n, g in df_f.groupby(agrupar_por.lower()):
+            st.markdown(f"**📂 {n}**")
             render_matriz(g)
     else:
         render_matriz(df_f)
