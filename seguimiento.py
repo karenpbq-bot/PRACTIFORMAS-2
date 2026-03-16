@@ -18,23 +18,16 @@ HITOS_LIST = list(MAPEO_HITOS.keys())
 # =========================================================
 # 2. LÓGICA DE CASCADA Y SEGURIDAD
 # =========================================================
-def registrar_hitos_cascada(p_id, hito_final, fecha_str):
+def registrar_hito_individual(p_id, hito, fecha_str):
     supabase = conectar()
     try:
-        safe_p_id = int(p_id)
-        idx_limite = HITOS_LIST.index(hito_final)
-        hitos_a_marcar = HITOS_LIST[:idx_limite + 1]
-        
-        existentes = supabase.table("seguimiento").select("hito").eq("producto_id", safe_p_id).execute()
-        hitos_con_data = [r['hito'] for r in existentes.data] if existentes.data else []
-
-        for h in hitos_a_marcar:
-            if h not in hitos_con_data:
-                supabase.table("seguimiento").upsert({
-                    "producto_id": safe_p_id, "hito": str(h), "fecha": str(fecha_str)
-                }, on_conflict="producto_id, hito").execute()
+        supabase.table("seguimiento").upsert({
+            "producto_id": int(p_id), 
+            "hito": str(hito), 
+            "fecha": str(fecha_str)
+        }, on_conflict="producto_id, hito").execute()
     except Exception as e:
-        st.error(f"Error en cascada: {e}")
+        st.error(f"Error al registrar: {e}")
 
 # =========================================================
 # 3. INTERFAZ PRINCIPAL
