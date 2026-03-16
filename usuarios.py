@@ -60,19 +60,21 @@ def mostrar():
                     "Administrador"
                 ], help="Supervisor: Proyectos propios. Gerente: Lectura total. Admin: Control total.")
                 
+                # UBICACIÓN: Dentro de 'with tab1:' en usuarios.py
                 if st.form_submit_button("Registrar en el Sistema"):
                     if u_nombre and u_pass and u_real:
                         try:
-                            # Ajuste Nube: Inserción de nuevo registro
+                            # AJUSTE: Cambiar 'nombre_real' por 'nombre_completo'
                             supabase.table("usuarios").insert({
                                 "nombre_usuario": u_nombre,
                                 "contrasena": u_pass,
                                 "rol": u_rol,
-                                "nombre_real": u_real
+                                "nombre_completo": u_real  # <--- Este es el cambio clave
                             }).execute()
                             st.success(f"✅ {u_real} registrado como {u_rol}.")
-                        except Exception:
-                            st.error("Error: El nombre de usuario ya existe en la base de datos.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: El usuario ya existe o hay un problema de conexión.")
                     else:
                         st.warning("Por favor, complete todos los campos.")
 
