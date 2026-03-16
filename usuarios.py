@@ -32,11 +32,15 @@ def mostrar():
                     else: st.error("❌ Las contraseñas no coinciden.")
                 else: st.error("❌ Contraseña actual incorrecta.")
 
-    # --- CAMBIO CRÍTICO: VALIDACIÓN FLEXIBLE ---
-    # Usamos .lower() para evitar errores si en la DB dice 'administrador' o 'Administrador'
-    if rol_actual.lower() == "administrador":
+   # --- ESTE ES EL AJUSTE DE LA INSTRUCCIÓN 1 ---
+    # Definimos que tanto 'admin' como 'administrador' son jefes
+    roles_jefes = ["administrador", "admin"]
+    
+    if rol_actual.lower() in roles_jefes:
         st.markdown("---")
         st.subheader("⚙️ Panel de Administración de Equipo")
+        
+        # Aquí siguen tus pestañas (tabs) de Crear Usuario y Lista...
         
         tab1, tab2 = st.tabs(["➕ Crear Usuario", "👥 Lista de Equipo"])
             
@@ -65,16 +69,19 @@ def mostrar():
                     else:
                         st.warning("⚠️ Rellene todos los campos.")
 
+        # UBICACIÓN: Dentro de 'with tab2:'
         with tab2:
             try:
+                # Seleccionamos explícitamente nombre_completo
                 res_u = supabase.table("usuarios").select("nombre_completo, nombre_usuario, rol").execute()
                 if res_u.data:
                     df_u = pd.DataFrame(res_u.data)
-                    df_u.columns = ['Nombre', 'Usuario', 'Rol']
+                    # El orden debe coincidir con el select anterior
+                    df_u.columns = ['Nombre Real', 'Login Usuario', 'Rol Asignado']
                     st.dataframe(df_u, use_container_width=True, hide_index=True)
-            except:
-                st.error("No se pudo cargar la lista de equipo.")
-
+            except Exception as e:
+                st.error(f"No se pudo cargar la lista: {e}")
+                
         # RESET MAESTRO
         st.markdown("---")
         with st.expander("🛡️ Reset de Contraseñas (Uso Administrativo)"):
