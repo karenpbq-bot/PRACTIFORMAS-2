@@ -5,22 +5,22 @@ from datetime import datetime, timedelta
 from base_datos import conectar, obtener_proyectos, obtener_gantt_real_data
 
 # =========================================================
-# 1. ESQUELETO MAESTRO (INAMOVIBLE)
+# 1. CONFIGURACIÓN Y CONSTANTES (ESQUELETO INAMOVIBLE)
 # =========================================================
 ORDEN_ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
 
 def obtener_color_semaforo(avance):
-    """Semáforo matizado basado en el avance del proyecto."""
+    """Calcula el color matizado según el % de avance del proyecto."""
     avance = max(0, min(100, avance))
     if avance < 50:
         val = int(100 + (avance * 2.5))
-        return f'rgb({val}, 40, 40)' # Rojo
+        return f'rgb({val}, 40, 40)'
     elif avance <= 75:
         val = int(160 + (avance - 50) * 3)
-        return f'rgb({val}, {val}, 0)' # Amarillo
+        return f'rgb({val}, {val}, 0)'
     else:
         val = int(120 + (avance - 75) * 5)
-        return f'rgb(30, {val}, 30)' # Verde
+        return f'rgb(30, {val}, 30)'
 
 def mostrar():
     st.header("📊 Tablero de Control: Planificado vs. Real")
@@ -29,7 +29,7 @@ def mostrar():
     with st.sidebar:
         st.divider()
         st.subheader("Opciones de Vista")
-        solo_real = st.toggle("Ocultar Planificación", value=False)
+        solo_real = st.toggle("Ocultar Planificación (Celeste)", value=False)
     
     with st.container(border=True):
         bus = st.text_input("🔍 Localizador de Proyectos", placeholder="Código, Cliente o Nombre...")
@@ -45,11 +45,11 @@ def mostrar():
                                     default=list(dict_proy.keys())[:1])
 
     if proyectos_sel:
-        # --- D. CONSTRUCCIÓN DEL DATASET (LÓGICA DE BLOQUES SEPARADOS) ---
         data_final = []
         
         for p_nom in proyectos_sel:
             id_p = dict_proy[p_nom]
+            # Traemos todos los campos de la tabla proyectos
             res_p = supabase.table("proyectos").select("*").eq("id", id_p).execute()
             if not res_p.data: continue
             p_data = res_p.data[0]
@@ -57,20 +57,20 @@ def mostrar():
             avance_p = p_data.get('avance', 0)
             color_real = obtener_color_semaforo(avance_p)
 
-            # 1. FORZAR ESQUELETO FIJO (Para que Diseño siempre aparezca arriba)
+            # --- A. FORZAR ESQUELETO DE 5 ETAPAS ---
             for etapa_fija in ORDEN_ETAPAS:
                 data_final.append(dict(
                     Proyecto=p_nom, Etapa=etapa_fija, 
                     Inicio=datetime.now(), Fin=datetime.now(), 
-                    Color="rgba(0,0,0,0)", Tipo="3_Esqueleto" 
+                    Color="rgba(0,0,0,0)", Tipo="3_Esqueleto"
                 ))
 
-            # 2. BLOQUE PLANIFICADO (CELESTE - SUPERIOR)
+            # --- B. DATA PLANIFICADA (BARRAS CELESTES) ---
             if not solo_real:
-                color_planificado = "#87CEEB" # Celeste SkyBlue
+                c_plan = "#87CEEB" # Celeste SkyBlue
                 map_cols = [
-                    ("Diseño", 'p_dis_i', 'p_dis_f'), 
-                    ("Fabricación", 'p_fab_i', 'p_fab_f'), 
+                    ("Diseño", 'p_dis_i', 'p_dis_f'),
+                    ("Fabricación", 'p_fab_i', 'p_fab_f'),
                     ("Traslado", 'p_tra_i', 'p_tra_f'),
                     ("Instalación", 'p_ins_i', 'p_ins_f'),
                     ("Entrega", 'p_ent_i', 'p_ent_f')
@@ -79,18 +79,18 @@ def mostrar():
                     if p_data.get(i_c) and p_data.get(f_c):
                         data_final.append(dict(
                             Proyecto=p_nom, Etapa=et, Inicio=p_data[i_c], 
-                            Fin=p_data[f_c], Color=color_planificado, Tipo="1_Planificado"
+                            Fin=p_data[f_c], Color=c_plan, Tipo="1_Planificado"
                         ))
             
-            # 3. BLOQUE REAL (EJECUTADO - INFERIOR)
+            # --- C. DATA REAL (EJECUTADO) ---
             df_r = obtener_gantt_real_data(id_p)
             if not df_r.empty:
                 for _, row in df_r.iterrows():
                     try:
                         str_f = str(row['fecha']).strip()
                         fecha_dt = datetime.strptime(str_f, '%d/%m/%Y') if "/" in str_f else datetime.strptime(str_f, '%Y-%m-%d')
-                        hito_l = row['hito'].lower()
                         
+                        hito_l = row['hito'].lower()
                         if "disen" in hito_l: et_m = "Diseño"
                         elif any(x in hito_l for x in ["fabric", "corte", "armad"]): et_m = "Fabricación"
                         elif "tras" in hito_l or "obra" in hito_l: et_m = "Traslado"
@@ -104,10 +104,12 @@ def mostrar():
                         ))
                     except: continue
 
-        # --- E. RENDERIZADO DEL GRÁFICO ---
+        # --- D. GENERACIÓN DEL GRÁFICO ---
+        if not data_final:
+            st.warning("No hay datos para mostrar."); return
+
         df_fig = pd.DataFrame(data_final)
         df_fig['Etapa'] = pd.Categorical(df_fig['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-        # Ordenamos: Planificado (1) antes que Real (2) para que el celeste quede arriba
         df_fig = df_fig.sort_values(['Proyecto', 'Etapa', 'Tipo'], ascending=[True, False, True])
         
         fig = px.timeline(
@@ -118,7 +120,7 @@ def mostrar():
 
         fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor='rgba(128,128,128,0.2)')
 
-        # AJUSTE DE ESCALA: 4 MESES
+        # Ajuste de escala a 4 meses
         f_val = pd.to_datetime(df_fig[df_fig['Tipo'] != "3_Esqueleto"]['Inicio'])
         f_min = f_val.min() if not f_val.empty else datetime.now()
         
@@ -128,7 +130,7 @@ def mostrar():
         )
 
         fig.update_layout(
-            barmode='group', # Pone las barras paralelas por cada etapa
+            barmode='group',
             height=450 * len(proyectos_sel), 
             margin=dict(l=10, r=10, t=50, b=10),
             showlegend=False
