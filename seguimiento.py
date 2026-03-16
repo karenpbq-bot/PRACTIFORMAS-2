@@ -129,36 +129,33 @@ def mostrar(supervisor_id=None):
 
     # --- ACCIONES E INDICADORES (FECHA CORREGIDA) ---
     st.divider()
-    act1, act2, act3, act4, act5 = st.columns([1.5, 1, 1, 1.2, 1.2])
+    # Ajustamos proporciones para que los botones finales (act4 y act5) tengan dimensiones idénticas
+    act1, act2, act3, act4, act5 = st.columns([1.5, 0.8, 1, 1.2, 1.2])
     
-    # 1. Calendario con formato corregido
+    # 1. Fecha
     f_reg = act1.date_input("Fecha Registro", datetime.now(), format="DD/MM/YYYY")
     
-    # 2. Métrica de cambios en espera (Pendientes)
-    n_pendientes = len(st.session_state.cambios_pendientes)
-    act2.metric("Pendientes", n_pendientes)
+    # 2. Pendientes (Indicador visual pequeño)
+    n_p = len(st.session_state.cambios_pendientes)
+    act2.metric("Pendientes", n_p)
     
-    # 3. Avance Global
-    act3.metric("Avance Global", f"{p_tot}%")
+    # 3. RECUPERADO: Avance Parcial (No debe desaparecer)
+    act3.metric("Avance Parcial", f"{p_par}%")
     
+    # 4. Botón Guardar (Mismo tamaño que el de descartar)
     if act4.button("💾 Guardar Avance", type="primary", use_container_width=True):
         ahora = datetime.now()
         f_hoy = ahora.strftime("%d/%m/%Y")
-        
         try:
-            # 1. Recolectamos los clics manuales
+            # --- Lógica de guardado masivo ---
             lote_para_guardar = []
             if st.session_state.cambios_pendientes:
                 for c in st.session_state.cambios_pendientes:
-                    lote_total_item = {"producto_id": c['pid'], "hito": c['hito'], "fecha": f_hoy}
-                    lote_para_guardar.append(lote_total_item)
+                    lote_para_guardar.append({"producto_id": c['pid'], "hito": c['hito'], "fecha": f_hoy})
 
-            # 2. CONSULTA CORREGIDA (Aquí estaba el error de nombre)
             res_db = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
-            # Usamos res_db.data correctamente
             df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['producto_id', 'hito'])
 
-            # 3. UNIFICACIÓN PARA CASCADA
             if lote_para_guardar:
                 df_manual = pd.DataFrame(lote_para_guardar)[['producto_id', 'hito']]
                 df_unificado = pd.concat([df_db, df_manual]).drop_duplicates()
@@ -167,43 +164,31 @@ def mostrar(supervisor_id=None):
             
             if not df_unificado.empty:
                 for pid in prods_all['id'].tolist():
-                    hitos_del_producto = df_unificado[df_unificado['producto_id'] == pid]['hito'].unique().tolist()
-                    
-                    if hitos_del_producto:
-                        # Encontrar el hito más avanzado
-                        indices = [HITOS_LIST.index(h) for h in hitos_del_producto if h in HITOS_LIST]
+                    hitos_del_p = df_unificado[df_unificado['producto_id'] == pid]['hito'].unique().tolist()
+                    if hitos_del_p:
+                        indices = [HITOS_LIST.index(h) for h in hitos_del_p if h in HITOS_LIST]
                         if indices:
                             max_idx = max(indices)
-                            # Rellenar los que falten hacia atrás
                             for i in range(max_idx):
-                                hito_previo = HITOS_LIST[i]
-                                if hito_previo not in hitos_del_producto:
-                                    lote_para_guardar.append({
-                                        "producto_id": pid,
-                                        "hito": hito_previo,
-                                        "fecha": f_hoy
-                                    })
+                                if HITOS_LIST[i] not in hitos_del_p:
+                                    lote_para_guardar.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
 
-            # 4. ENVÍO MASIVO Y LIMPIEZA
             if lote_para_guardar:
                 df_final = pd.DataFrame(lote_para_guardar).drop_duplicates(subset=['producto_id', 'hito'])
                 supabase.table("seguimiento").upsert(df_final.to_dict(orient='records'), on_conflict="producto_id, hito").execute()
 
-            # Recalcular avance y cerrar
             res_f = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", prods_all['id'].tolist()).execute()
             nuevo_avance = calc_avance(prods_all, pd.DataFrame(res_f.data))
-            
             supabase.table("proyectos").update({"avance": nuevo_avance}).eq("id", id_p).execute()
-            st.session_state.cambios_pendientes = [] 
             
-            st.success(f"✅ Avance guardado: {nuevo_avance}%")
+            st.session_state.cambios_pendientes = [] 
+            st.success(f"✅ Guardado: {nuevo_avance}%")
             st.rerun()
-
         except Exception as e:
-            st.error(f"Error al procesar: {e}")
+            st.error(f"Error: {e}")
 
-    # 5. Botón Descartar (Limpia la memoria temporal)
-    if act5.button("🗑️ Descartar", type="secondary", use_container_width=True):
+    # 5. Botón Descartar (Nombre corregido y dimensiones idénticas)
+    if act5.button("🗑️ Descartar último avance", type="secondary", use_container_width=True):
         st.session_state.cambios_pendientes = []
         st.rerun()
         
