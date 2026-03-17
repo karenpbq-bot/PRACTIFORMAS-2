@@ -119,7 +119,7 @@ def mostrar():
             # === SELECCIÓN PARA GESTIÓN Y ELIMINACIÓN ===
             st.divider()
             opciones_proy = df_p['proyecto_display'].tolist()
-            seleccionado = st.selectbox("🎯 Selecciona para gestionar Matriz o Eliminar:", ["-- Seleccionar --"] + opciones_proy)
+            seleccionado = st.selectbox("🎯 Selecciona Proyecto para Eliminar:", ["-- Seleccionar --"] + opciones_proy)
 
             if seleccionado != "-- Seleccionar --":
                 # Extraemos el ID del proyecto seleccionado
