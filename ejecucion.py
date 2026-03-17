@@ -6,8 +6,8 @@ from base_datos import (
     conectar, 
     obtener_proyectos, 
     obtener_gantt_real_data, 
-    obtener_productos_por_proyecto, # <-- FALTA ESTA
-    obtener_avance_por_hitos        # <-- ASEGURATE QUE ESTÉ ESTA TAMBIÉN
+    obtener_productos_por_proyecto, 
+    obtener_avance_por_hitos
 )
 
 ORDEN_ETAPAS = ["Diseño", "Fabricación", "Traslado", "Instalación", "Entrega"]
@@ -114,58 +114,47 @@ def mostrar():
         with tab_metricas:
             st.subheader("📊 Centro de Métricas y Reportes")
             
-            # --- SECCIÓN A: FILTRO DINÁMICO ---
             with st.expander("🔍 Filtros de Auditoría Detallada", expanded=False):
                 c1, c2 = st.columns(2)
-                # Obtenemos productos del primer proyecto seleccionado para llenar los filtros
-                id_p_ref = dict_proy[proyectos_sel[0]]
-                df_prods_ref = obtener_productos_por_proyecto(id_p_ref)
+                # Obtenemos productos para inicializar filtros
+                id_p_ini = dict_proy[proyectos_sel[0]]
+                df_prods_ini = obtener_productos_por_proyecto(id_p_ini)
                 
-                opciones_ub = df_prods_ref['ubicacion'].unique().tolist() if not df_prods_ref.empty else []
-                opciones_ti = df_prods_ref['tipo'].unique().tolist() if not df_prods_ref.empty else []
+                opciones_u = sorted(df_prods_ini['ubicacion'].unique().tolist()) if not df_prods_ini.empty else []
+                opciones_t = sorted(df_prods_ini['tipo'].unique().tolist()) if not df_prods_ini.empty else []
                 
-                filtro_ub = c1.multiselect("Filtrar por Ubicación:", options=opciones_ub)
-                filtro_ti = c2.multiselect("Filtrar por Tipo:", options=opciones_ti)
+                f_ub = c1.multiselect("Filtrar por Ubicación:", options=opciones_u)
+                f_ti = c2.multiselect("Filtrar por Tipo:", options=opciones_t)
 
-            # --- SECCIÓN B: REPORTE MATRICIAL DINÁMICO ---
-            reporte_data = []
-            
+            reporte_final = []
             for p_nom in proyectos_sel:
-                id_p = dict_proy[p_nom]
-                # Usamos la función importada globalmente
-                df_prods = obtener_productos_por_proyecto(id_p)
+                id_p_loop = dict_proy[p_nom]
+                df_prods_loop = obtener_productos_por_proyecto(id_p_loop)
                 
-                # Aplicar filtros dinámicos
-                if filtro_ub:
-                    df_prods = df_prods[df_prods['ubicacion'].isin(filtro_ub)]
-                if filtro_ti:
-                    df_prods = df_prods[df_prods['tipo'].isin(filtro_ti)]
+                if f_ub: df_prods_loop = df_prods_loop[df_prods_loop['ubicacion'].isin(f_ub)]
+                if f_ti: df_prods_loop = df_prods_loop[df_prods_loop['tipo'].isin(f_ti)]
                 
-                if df_prods.empty:
-                    continue
+                if df_prods_loop.empty: continue
                 
-                # Calculamos porcentajes basados en los productos filtrados
-                avances_hitos = obtener_avance_por_hitos(id_p, df_productos_filtrados=df_prods)
+                # Nombre de variable distinto a la función para evitar UnboundLocalError
+                stats_hitos = obtener_avance_por_hitos(id_p_loop, df_productos_filtrados=df_prods_loop)
                 
-                GRUPOS = {
-                    "Diseño": ["Diseñado"],
-                    "Fabricación": ["Fabricado"],
+                GRUPOS_GANTT = {
+                    "Diseño": ["Diseñado"], "Fabricación": ["Fabricado"],
                     "Traslado": ["Material en Obra", "Material en Ubicación"],
                     "Instalación": ["Instalación de Estructura", "Instalación de Puertas o Frentes"],
                     "Entrega": ["Revisión y Observaciones", "Entrega"]
                 }
                 
-                fila = {"Proyecto": p_nom, "Cant. Muebles": len(df_prods)}
-                for etapa, hitos in GRUPOS.items():
-                    # Calculamos el promedio de los hitos que pertenecen a la etapa
-                    porc_etapa = sum([avances_hitos.get(h, 0) for h in hitos]) / len(hitos)
-                    fila[f"{etapa} %"] = round(porc_etapa, 1)
-                
-                reporte_data.append(fila)
+                fila = {"Proyecto": p_nom, "Muebles": len(df_prods_loop)}
+                for etapa, lista_h in GRUPOS_GANTT.items():
+                    val_etapa = sum([stats_hitos.get(h, 0) for h in lista_h]) / len(lista_h)
+                    fila[f"{etapa} %"] = round(val_etapa, 1)
+                reporte_final.append(fila)
 
-            if reporte_data:
-                df_matriz = pd.DataFrame(reporte_data)
-                st.dataframe(df_matriz, use_container_width=True, hide_index=True)
+            if reporte_final:
+                st.dataframe(pd.DataFrame(reporte_final), use_container_width=True, hide_index=True)
+                # ... botones de exportación ...
                 
                 # --- SECCIÓN C: BOTONES DE EXPORTACIÓN ---
                 st.divider()
