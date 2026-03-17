@@ -153,19 +153,20 @@ def mostrar():
                 reporte_final.append(fila)
 
             if reporte_final:
-                st.dataframe(pd.DataFrame(reporte_final), use_container_width=True, hide_index=True)
-                # ... botones de exportación ...
+                # CREAMOS EL DATAFRAME AQUÍ PARA QUE EXISTA EN TODA LA SECCIÓN
+                df_matriz_final = pd.DataFrame(reporte_final)
+                
+                st.dataframe(df_matriz_final, use_container_width=True, hide_index=True)
                 
                 # --- SECCIÓN C: BOTONES DE EXPORTACIÓN ---
                 st.divider()
                 col1, col2 = st.columns(2)
                 
-                # Reporte en CSV
-                csv_pct = df_matriz.to_csv(index=False).encode('utf-8')
+                # Reporte en CSV (Corregido el nombre de la variable)
+                csv_pct = df_matriz_final.to_csv(index=False).encode('utf-8')
                 col1.download_button("📥 Exportar Resumen (%)", csv_pct, "avance_proyectos.csv", "text/csv")
                 
                 if col2.button("📊 Generar Auditoría 0/1 (Detallada)"):
-                    # Extraemos códigos de proyecto para filtrar la tabla de auditoría
                     codigos_sel = [p.split(" — ")[0].replace("[", "").replace("]", "") for p in proyectos_sel]
                     res_aud = supabase.table("productos_avance_valor").select("*").in_("codigo_proyecto", codigos_sel).execute()
                     if res_aud.data:
@@ -173,7 +174,6 @@ def mostrar():
                         st.download_button("📥 Descargar Excel de Auditoría", df_aud.to_csv(index=False).encode('utf-8'), "auditoria_piezas.csv", "text/csv")
             else:
                 st.info("No hay datos para mostrar con los filtros seleccionados.")
-
             st.divider()
             
             # 2. DETALLE INDIVIDUAL (Bucle para ver el detalle de los proyectos seleccionados)
