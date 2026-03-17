@@ -117,50 +117,67 @@ def mostrar():
         with tab_gantt:
             if data_final:
                 df_fig = pd.DataFrame(data_final)
+                # ... (Mantenemos tu limpieza de fechas)
                 df_fig['Inicio'] = pd.to_datetime(df_fig['Inicio'], errors='coerce')
                 df_fig['Fin'] = pd.to_datetime(df_fig['Fin'], errors='coerce')
                 df_fig = df_fig.dropna(subset=['Inicio', 'Fin'])
-
-                mask_mismo_dia = (df_fig['Inicio'] == df_fig['Fin'])
-                df_fig.loc[mask_mismo_dia, 'Fin'] = df_fig.loc[mask_mismo_dia, 'Fin'] + pd.Timedelta(hours=23)
-
+                
+                # Filtrar solo lo visible (quitamos el esqueleto)
                 df_visible = df_fig[df_fig['Color'] != "rgba(0,0,0,0)"].copy()
 
                 if not df_visible.empty:
-                    df_visible['Etapa'] = pd.Categorical(df_visible['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
-                    df_visible = df_visible.sort_values(['Proyecto', 'Etapa'], ascending=[True, True])
+                    # ITERAMOS: Un gráfico por cada proyecto seleccionado
+                    for p_nom in proyectos_sel:
+                        df_proy = df_visible[df_visible['Proyecto'] == p_nom].copy()
+                        
+                        if df_proy.empty:
+                            continue
+                        
+                        st.markdown(f"#### 🏗️ Proyecto: {p_nom}")
+                        
+                        # Configuramos el orden de las etapas solo para este proyecto
+                        df_proy['Etapa'] = pd.Categorical(df_proy['Etapa'], categories=ORDEN_ETAPAS, ordered=True)
+                        df_proy = df_proy.sort_values('Etapa')
 
-                    fig = px.timeline(
-                        df_visible, x_start="Inicio", x_end="Fin", y="Etapa", 
-                        color="Color", facet_col="Proyecto", facet_col_wrap=1, 
-                        color_discrete_map="identity", category_orders={"Etapa": ORDEN_ETAPAS}
-                    )
+                        # 1. CREACIÓN DEL GRÁFICO INDEPENDIENTE
+                        fig = px.timeline(
+                            df_proy, 
+                            x_start="Inicio", 
+                            x_end="Fin", 
+                            y="Etapa", 
+                            color="Color",
+                            color_discrete_map="identity"
+                        )
 
-                    fig.update_yaxes(autorange="reversed", showgrid=True)
-                    
-                    f_plan_ref = df_visible[df_visible['Tipo'] == "1_Planificado"]['Inicio']
-                    f_min_x = f_plan_ref.min() if not f_plan_ref.empty else pd.Timestamp.now()
-                    
-                    fig.update_xaxes(
-                        range=[f_min_x - timedelta(days=2), f_min_x + timedelta(days=45)], 
-                        showgrid=True, dtick="M1", tickformat="%b %Y",
-                        rangeslider=dict(visible=True, thickness=0.05)
-                    )
+                        # 2. CONFIGURACIÓN PARA APLANAR (Altura fija de 250px por gráfico)
+                        fig.update_yaxes(autorange="reversed", showgrid=True, title="")
+                        
+                        # Rango de fechas y ZOOM
+                        f_min_x = df_proy['Inicio'].min()
+                        fig.update_xaxes(
+                            range=[f_min_x - timedelta(days=2), f_min_x + timedelta(days=45)],
+                            rangeslider=dict(visible=True, thickness=0.05), # ZOOM
+                            title=""
+                        )
 
-                    altura_por_proyecto = 300  
-                    fig.update_layout(
-                        barmode='group', bargap=0.2, 
-                        height=altura_por_proyecto * len(proyectos_sel), 
-                        margin=dict(l=10, r=10, t=50, b=10), 
-                        showlegend=False, hovermode="y unified"
-                    )
+                        fig.update_layout(
+                            height=250,      # Altura fija bajita para que las filas estén pegadas
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            barmode='group',
+                            bargap=0.1,      # Reduce espacio entre Planificado y Real
+                            showlegend=False
+                        )
 
-                    fig.update_traces(marker_line_width=0, opacity=0.9)
-                    fig.add_vline(x=pd.Timestamp.now().timestamp() * 1000, line_width=2, line_color="red")
+                        fig.update_traces(marker_line_width=0, opacity=0.9)
 
-                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
+                        # Línea de HOY
+                        fig.add_vline(x=pd.Timestamp.now().timestamp() * 1000, line_width=2, line_color="red")
+
+                        # RENDERIZADO
+                        st.plotly_chart(fig, use_container_width=True, key=f"gantt_{p_nom}")
+                        st.divider() # Separador visual entre proyectos
                 else:
-                    st.info("No hay avances registrados para mostrar.")
+                    st.info("No hay avances registrados.")
             else:
                 st.warning("Seleccione al menos un proyecto.")
 
