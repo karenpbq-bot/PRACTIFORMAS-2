@@ -102,7 +102,12 @@ def obtener_avance_por_hitos(id_proyecto, df_productos_filtrados=None):
     else:
         df_p = df_productos_filtrados
 
-    if df_p.empty: return {}
+    if df_p.empty: 
+        # Si no hay productos, devolvemos 0% para todos los hitos
+        HITOS_LIST = ["Diseñado", "Fabricado", "Material en Obra", "Material en Ubicación", 
+                      "Instalación de Estructura", "Instalación de Puertas o Frentes", 
+                      "Revisión y Observaciones", "Entrega"]
+        return {h: 0.0 for h in HITOS_LIST}
 
     ids = df_p['id'].tolist()
     res_seg = supabase.table("seguimiento").select("hito").in_("producto_id", ids).execute()
@@ -114,10 +119,16 @@ def obtener_avance_por_hitos(id_proyecto, df_productos_filtrados=None):
                   "Revisión y Observaciones", "Entrega"]
     
     total = len(df_p)
-    if total == 0: return {h: 0.0 for h in HITOS_LIST}
+    
+    # --- VALIDACIÓN DE SEGURIDAD (Ubicación exacta) ---
+    if total == 0: 
+        return {h: 0.0 for h in HITOS_LIST}
+    # --------------------------------------------------
+
     for h in HITOS_LIST:
         conteo = len(df_s[df_s['hito'] == h]) if not df_s.empty else 0
         avances[h] = round((conteo / total) * 100, 1)
+        
     return avances
 
 # =========================================================
