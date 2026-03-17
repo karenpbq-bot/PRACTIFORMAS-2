@@ -88,56 +88,63 @@ def mostrar(supervisor_id=None):
 
         with t3:
             f_av = st.file_uploader("Subir Excel", type=["xlsx", "csv"], key="uploader_excel")
-            if f_av and st.button("🚀 Iniciar Importación con Fechas Reales"):
-                # Lectura del archivo
-                df_imp = pd.read_excel(f_av) if f_av.name.endswith('xlsx') else pd.read_csv(f_av)
-                lote_imp = []
-                
-                for _, r_ex in df_imp.iterrows():
-                    # Buscamos el producto exacto por Ubicación y Tipo
-                    match = prods_all[
-                        (prods_all['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & 
-                        (prods_all['tipo'].astype(str) == str(r_ex.get('Tipo','')))
-                    ]
+            if f_av and st.button("🚀 Iniciar Importación con Fechas del Excel"):
+                try:
+                    df_imp = pd.read_excel(f_av) if f_av.name.endswith('xlsx') else pd.read_csv(f_av)
+                    lote_imp = []
                     
-                    if not match.empty:
-                        pid = int(match.iloc[0]['id'])
+                    for _, r_ex in df_imp.iterrows():
+                        # Buscamos el producto por Ubicación y Tipo
+                        match = prods_all[
+                            (prods_all['ubicacion'].astype(str).str.strip() == str(r_ex.get('Ubicacion','')).strip()) & 
+                            (prods_all['tipo'].astype(str).str.strip() == str(r_ex.get('Tipo','')).strip())
+                        ]
                         
-                        # Recorremos las columnas de hitos del Excel
-                        for h_nom in HITOS_LIST:
-                            val_fecha = r_ex.get(h_nom)
+                        if not match.empty:
+                            pid = int(match.iloc[0]['id'])
                             
-                            # Solo procesamos si la celda tiene una fecha/dato
-                            if pd.notnull(val_fecha) and str(val_fecha).strip() != "":
-                                # Convertir formatos de fecha de Excel (Timestamp) a String DD/MM/YYYY
-                                if isinstance(val_fecha, (datetime, pd.Timestamp)):
-                                    f_str = val_fecha.strftime("%d/%m/%Y")
-                                else:
-                                    f_str = str(val_fecha).strip()
+                            for h_nom in HITOS_LIST:
+                                val_fecha = r_ex.get(h_nom)
                                 
-                                lote_imp.append({
-                                    "producto_id": pid, 
-                                    "hito": h_nom, 
-                                    "fecha": f_str
-                                })
-                
-                if lote_imp:
-                    # El upsert actualiza la fecha si el par (producto_id, hito) ya existe
-                    supabase.table("seguimiento").upsert(
-                        lote_imp, 
-                        on_conflict="producto_id, hito"
-                    ).execute()
+                                # Si la celda tiene contenido
+                                if pd.notnull(val_fecha) and str(val_fecha).strip() != "":
+                                    try:
+                                        # FORZAMOS conversión a fecha para validar formato
+                                        # Esto convierte tanto objetos Excel como texto "15/03/2024"
+                                        fecha_dt = pd.to_datetime(val_fecha, dayfirst=True, errors='coerce')
+                                        
+                                        if pd.notnull(fecha_dt):
+                                            f_str = fecha_dt.strftime("%d/%m/%Y")
+                                            lote_imp.append({
+                                                "producto_id": pid, 
+                                                "hito": h_nom, 
+                                                "fecha": f_str
+                                            })
+                                    except:
+                                        continue # Si la fecha es basura, la ignora para no romper la API
                     
-                    # Sincronizamos con el motor del Gantt
-                    try:
+                    if lote_imp:
+                        # Convertimos a DataFrame para eliminar duplicados accidentales
+                        df_lote = pd.DataFrame(lote_imp).drop_duplicates(subset=['producto_id', 'hito'])
+                        
+                        # Ejecución en Supabase
+                        supabase.table("seguimiento").upsert(
+                            df_lote.to_dict(orient='records'), 
+                            on_conflict="producto_id, hito"
+                        ).execute()
+                        
+                        # Sincronización con el Gantt
                         from base_datos import sincronizar_avances_estructural
                         p_cod = df_p_all[df_p_all['id'] == id_p].iloc[0]['codigo']
                         sincronizar_avances_estructural(p_cod)
-                    except:
-                        pass
                         
-                    st.success(f"✅ Se han actualizado {len(lote_imp)} hitos con las fechas del Excel.")
-                    st.rerun()
+                        st.success(f"✅ Se actualizaron {len(df_lote)} hitos con fechas reales.")
+                        st.rerun()
+                    else:
+                        st.warning("No se encontraron coincidencias entre el Excel y los productos del proyecto.")
+                
+                except Exception as e:
+                    st.error(f"Error procesando el archivo: {e}")
 
         with t4:
             df_exp = prods_all.copy()
