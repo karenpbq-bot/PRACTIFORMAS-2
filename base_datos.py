@@ -421,3 +421,70 @@ def sincronizar_avances_etapas(id_p):
             }, on_conflict="proyecto_id, etapa").execute()
     except Exception as e:
         st.error(f"Error en sincronización: {e}")
+
+def sincronizar_avances_estructural(codigo_p):
+    """Sincroniza la tabla de conteo (0/1) y la tabla horizontal de etapas."""
+    try:
+        supabase = conectar()
+        # A. Obtener IDs y Pesos
+        res_p = supabase.table("proyectos").select("id, proyecto_text, cliente").eq("codigo", codigo_p).single().execute()
+        if not res_p.data: return
+        p_id, p_nom, p_cli = res_p.data['id'], res_p.data['proyecto_text'], res_p.data['cliente']
+        
+        pesos_dict = obtener_pesos_seguimiento() 
+        
+        # B. Obtener Productos y Seguimiento real
+        res_prods = supabase.table("productos").select("id").eq("proyecto_id", p_id).execute()
+        df_prods_list = res_prods.data
+        if not df_prods_list: return
+        
+        num_prods = len(df_prods_list)
+        ids_prods = [p['id'] for p in df_prods_list]
+        
+        res_seg = supabase.table("seguimiento").select("producto_id, hito").in_("producto_id", ids_prods).execute()
+        df_seg = pd.DataFrame(res_seg.data) if res_seg.data else pd.DataFrame(columns=['producto_id', 'hito'])
+
+        # C. Actualizar Tabla de Conteo (productos_avance_valor) 0/1
+        lote_conteo = []
+        for p_id_int in ids_prods:
+            for hito_nom, peso_val in pesos_dict.items():
+                esta_logrado = 1 if not df_seg[(df_seg['producto_id'] == p_id_int) & (df_seg['hito'] == hito_nom)].empty else 0
+                lote_conteo.append({
+                    "codigo_proyecto": codigo_p,
+                    "producto_id": p_id_int,
+                    "hito": hito_nom,
+                    "logrado": esta_logrado,
+                    "valor_porcentual": peso_val
+                })
+        
+        if lote_conteo:
+            supabase.table("productos_avance_valor").upsert(lote_conteo, on_conflict="producto_id, hito").execute()
+
+        # D. Calcular y Actualizar Tabla Horizontal (avances_etapas)
+        GRUPOS = {
+            "av_diseno": ["Diseñado"],
+            "av_fabricacion": ["Fabricado"],
+            "av_traslado": ["Material en Obra", "Material en Ubicación"],
+            "av_instalacion": ["Instalación de Estructura", "Instalación de Puertas o Frentes"],
+            "av_entrega": ["Revisión y Observaciones", "Entrega"]
+        }
+
+        fila_horizontal = {
+            "codigo": codigo_p, "proyecto_nombre": p_nom, "cliente": p_cli,
+            "ultima_actualizacion": datetime.now().isoformat()
+        }
+
+        for col, hitos in GRUPOS.items():
+            # Sumamos todos los 'logrados' de los productos en esos hitos específicos
+            conteo_total = 0
+            for h in hitos:
+                conteo_total += len(df_seg[df_seg['hito'] == h])
+            
+            # Promedio etapa = (logrados) / (posibles: num_productos * num_hitos_en_etapa)
+            max_posible = len(hitos) * num_prods
+            fila_horizontal[col] = round((conteo_total / max_posible) * 100, 1)
+
+        supabase.table("avances_etapas").upsert(fila_horizontal).execute()
+        
+    except Exception as e:
+        st.error(f"Error en sincronización estructural: {e}")
