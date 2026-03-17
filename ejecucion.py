@@ -121,13 +121,14 @@ def mostrar():
                 df_fig['Fin'] = pd.to_datetime(df_fig['Fin'], errors='coerce')
                 df_fig = df_fig.dropna(subset=['Inicio', 'Fin'])
 
+                # Forzamos ancho para hitos del mismo día
                 mask_mismo_dia = (df_fig['Inicio'] == df_fig['Fin'])
                 df_fig.loc[mask_mismo_dia, 'Fin'] = df_fig.loc[mask_mismo_dia, 'Fin'] + pd.Timedelta(hours=23)
 
                 df_visible = df_fig[df_fig['Color'] != "rgba(0,0,0,0)"].copy()
 
                 if not df_visible.empty:
-                    # BUCLE PARA GRÁFICOS INDEPENDIENTES Y APLANADOS
+                    # BUCLE: Gráfico independiente por proyecto para evitar mezclas
                     for p_nom in proyectos_sel:
                         df_p_plot = df_visible[df_visible['Proyecto'] == p_nom].copy()
                         if df_p_plot.empty: continue
@@ -138,11 +139,12 @@ def mostrar():
 
                         fig = px.timeline(df_p_plot, x_start="Inicio", x_end="Fin", y="Etapa", color="Color", color_discrete_map="identity")
                         
+                        # Ajustes para "Aplanar" (Altura fija 250px)
                         fig.update_yaxes(autorange="reversed", title="")
                         fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.05), title="")
                         
                         fig.update_layout(
-                            height=250, # ALTURA FIJA PARA APLANAR
+                            height=250, 
                             margin=dict(l=10, r=10, t=10, b=10),
                             barmode='group',
                             bargap=0.1,
@@ -151,6 +153,7 @@ def mostrar():
                         fig.update_traces(marker_line_width=0, opacity=0.9)
                         fig.add_vline(x=pd.Timestamp.now().timestamp() * 1000, line_width=2, line_color="red")
                         
+                        # Key única para evitar conflictos en Streamlit
                         st.plotly_chart(fig, use_container_width=True, key=f"gantt_{p_nom}")
                         st.divider()
                 else:
@@ -162,12 +165,10 @@ def mostrar():
         with tab_metricas:
             st.subheader("📊 Centro de Métricas y Reportes")
             
-            # (Aquí conservamos tu lógica de métricas pero alineada)
             reporte_final = []
             for p_nom in proyectos_sel:
                 id_p_loop = dict_proy[p_nom]
                 df_prods_loop = obtener_productos_por_proyecto(id_p_loop)
-                
                 if df_prods_loop.empty: continue
                 
                 stats_hitos = obtener_avance_por_hitos(id_p_loop, df_productos_filtrados=df_prods_loop)
@@ -196,7 +197,8 @@ def mostrar():
                 st.markdown(f"**Proyecto: {p_nom}**")
                 avances = obtener_avance_por_hitos(id_p_int)
                 if avances:
-                    m = st.columns(2) # 2 columnas para celular
+                    # 2 columnas para que quepan bien en el celular
+                    m = st.columns(2) 
                     for idx, (h, v) in enumerate(avances.items()):
                         with m[idx % 2]:
                             st.metric(h, f"{v}%")
