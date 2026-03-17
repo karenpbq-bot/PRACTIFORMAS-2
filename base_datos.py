@@ -224,20 +224,27 @@ def obtener_incidencias_resumen():
 # 7. FUNCIONES DE COMPATIBILIDAD (Legacy)
 # =========================================================
 
-def actualizar_avance_real(id_p):
-    """Mantenida para no romper llamadas antiguas. Redirige a la nueva lógica."""
-    res = conectar().table("proyectos").select("codigo").eq("id", id_p).single().execute()
-    if res.data: sincronizar_avances_estructural(res.data['codigo'])
-
 def sincronizar_avances_etapas(id_p):
     """Alias para compatibilidad con módulos antiguos."""
     actualizar_avance_real(id_p)
 
 def obtener_gantt_real_data(id_p):
-    """Función de compatibilidad para evitar errores de importación."""
-    supabase = conectar()
-    prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
-    ids = [p['id'] for p in prods.data]
-    if not ids: return pd.DataFrame()
-    res = supabase.table("seguimiento").select("hito, fecha").in_("producto_id", ids).execute()
-    return pd.DataFrame(res.data)
+    """Función de compatibilidad para evitar errores de importación en ejecucion.py"""
+    try:
+        supabase = conectar()
+        res_prods = supabase.table("productos").select("id").eq("proyecto_id", id_p).execute()
+        ids = [p['id'] for p in res_prods.data]
+        if not ids: return pd.DataFrame()
+        res = supabase.table("seguimiento").select("hito, fecha").in_("producto_id", ids).execute()
+        return pd.DataFrame(res.data)
+    except:
+        return pd.DataFrame()
+
+def actualizar_avance_real(id_p):
+    """Redirige llamadas antiguas al nuevo motor estructural"""
+    try:
+        res = conectar().table("proyectos").select("codigo").eq("id", id_p).single().execute()
+        if res.data:
+            sincronizar_avances_estructural(res.data['codigo'])
+    except:
+        pass
