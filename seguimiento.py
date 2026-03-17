@@ -152,11 +152,11 @@ def mostrar(supervisor_id=None):
             if lote_save:
                 supabase.table("seguimiento").upsert(lote_save, on_conflict="producto_id, hito").execute()
 
-            # --- NUEVA SINCRONIZACIÓN ESTRUCTURAL ---
+            # --- NUEVA ACTUALIZACIÓN ESTRUCTURAL ---
             from base_datos import sincronizar_avances_estructural
-            # Obtenemos el código del proyecto desde el DataFrame original para la tabla horizontal
             p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
-            sincronizar_avances_estructural(p_data_obj['codigo']) 
+            sincronizar_avances_estructural(p_data_obj['codigo'])
+            # ---------------------------------------
             
             st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
             st.success("✅ Seguimiento guardado y Gantt actualizado.")
@@ -187,10 +187,11 @@ def mostrar(supervisor_id=None):
                     try:
                         supabase.table("seguimiento").upsert(lote_grupal, on_conflict="producto_id, hito").execute()
                         
-                        # --- NUEVA SINCRONIZACIÓN ESTRUCTURAL ---
+                        # --- NUEVA ACTUALIZACIÓN ESTRUCTURAL ---
                         from base_datos import sincronizar_avances_estructural
                         p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
                         sincronizar_avances_estructural(p_data_obj['codigo'])
+                        # ---------------------------------------
 
                         st.success(f"✅ {h} marcado y métricas actualizadas.")
                         st.rerun()
