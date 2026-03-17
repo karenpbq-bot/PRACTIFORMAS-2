@@ -152,13 +152,16 @@ def mostrar(supervisor_id=None):
             if lote_save:
                 supabase.table("seguimiento").upsert(lote_save, on_conflict="producto_id, hito").execute()
 
-            # ACTUALIZACIÓN DE MÉTRICAS (Tabla avances_etapas)
-            from base_datos import sincronizar_avances_etapas
-            sincronizar_avances_etapas(id_p)
+            # --- NUEVA SINCRONIZACIÓN ESTRUCTURAL ---
+            from base_datos import sincronizar_avances_estructural
+            # Obtenemos el código del proyecto desde el DataFrame original para la tabla horizontal
+            p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
+            sincronizar_avances_estructural(p_data_obj['codigo']) 
             
             st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
-            st.success("✅ Seguimiento guardado y métricas actualizadas.")
+            st.success("✅ Seguimiento guardado y Gantt actualizado.")
             st.rerun()
+        
         except Exception as e: 
             st.error(f"Error: {e}")
 
@@ -183,11 +186,15 @@ def mostrar(supervisor_id=None):
                 if lote_grupal:
                     try:
                         supabase.table("seguimiento").upsert(lote_grupal, on_conflict="producto_id, hito").execute()
-                        # ESTA LÍNEA ES VITAL PARA EL COLOR DEL GANTT
-                        from base_datos import actualizar_avance_real
-                        actualizar_avance_real(id_p)
-                        st.success(f"✅ {h} marcado.")
+                        
+                        # --- NUEVA SINCRONIZACIÓN ESTRUCTURAL ---
+                        from base_datos import sincronizar_avances_estructural
+                        p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
+                        sincronizar_avances_estructural(p_data_obj['codigo'])
+
+                        st.success(f"✅ {h} marcado y métricas actualizadas.")
                         st.rerun()
+                    
                     except Exception as e:
                         st.error(f"Error: {e}")
                         
@@ -200,7 +207,9 @@ def mostrar(supervisor_id=None):
         rol = st.session_state.get('rol', 'Supervisor')
         for _, p in df_r.iterrows():
             cols = st.columns([2.5] + [0.7]*8 + [1.5])
-            cols[0].write(f"**{p['ubicacion']}** {p['tipo']} {p['ml']}ml")
+            # Mostramos el Código de Etiqueta primero para identificación rápida
+            id_etiqueta = p.get('codigo_etiqueta', 'S/N')
+            cols[0].write(f"**{id_etiqueta}** - {p['ubicacion']} ({p['tipo']})")
             for i, h in enumerate(HITOS_LIST):
                 en_db = not segs[(segs['producto_id'] == p['id']) & (segs['hito'] == h)].empty
                 idx_mem = next((idx for idx, d in enumerate(st.session_state.cambios_pendientes) if d["pid"] == p['id'] and d["hito"] == h), None)
