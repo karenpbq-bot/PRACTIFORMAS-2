@@ -152,10 +152,13 @@ def mostrar(supervisor_id=None):
             if lote_save:
                 supabase.table("seguimiento").upsert(lote_save, on_conflict="producto_id, hito").execute()
 
-            # --- NUEVA ACTUALIZACIÓN ESTRUCTURAL ---
-            from base_datos import sincronizar_avances_estructural
-            p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
-            sincronizar_avances_estructural(p_data_obj['codigo'])
+            # --- ACTUALIZACIÓN DE MÉTRICAS Y GANTT ---
+            try:
+                from base_datos import sincronizar_avances_estructural
+                p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
+                sincronizar_avances_estructural(p_data_obj['codigo'])
+            except Exception as e:
+                st.warning(f"Nota: Los datos de seguimiento se guardaron, pero hubo un problema actualizando el Gantt: {e}")
             # ---------------------------------------
             
             st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
@@ -163,7 +166,7 @@ def mostrar(supervisor_id=None):
             st.rerun()
         
         except Exception as e: 
-            st.error(f"Error: {e}")
+            st.error(f"Error crítico: {e}")
 
     if act5.button("🗑️ Descartar", type="secondary", use_container_width=True, key="btn_des_final"):
         st.session_state.cambios_pendientes, st.session_state.notas_pendientes = [], {}
@@ -187,14 +190,13 @@ def mostrar(supervisor_id=None):
                     try:
                         supabase.table("seguimiento").upsert(lote_grupal, on_conflict="producto_id, hito").execute()
                         
-                        # --- NUEVA ACTUALIZACIÓN ESTRUCTURAL ---
+                        # Sincronización Estructural
                         from base_datos import sincronizar_avances_estructural
                         p_data_obj = df_p_all[df_p_all['id'] == id_p].iloc[0]
                         sincronizar_avances_estructural(p_data_obj['codigo'])
-                        # ---------------------------------------
 
                         st.success(f"✅ {h} marcado y métricas actualizadas.")
-                        st.rerun()
+                        st.rerun() # Forzamos recarga para ver los cambios
                     
                     except Exception as e:
                         st.error(f"Error: {e}")
