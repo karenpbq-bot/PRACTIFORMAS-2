@@ -90,20 +90,40 @@ def mostrar(supervisor_id=None):
             f_av = st.file_uploader("Subir Excel", type=["xlsx", "csv"], key="uploader_excel")
             if f_av and st.button("🚀 Iniciar Importación con Cascada"):
                 df_imp = pd.read_excel(f_av) if f_av.name.endswith('xlsx') else pd.read_csv(f_av)
-                f_hoy = datetime.now().strftime("%d/%m/%Y")
                 lote_imp = []
+                
                 for _, r_ex in df_imp.iterrows():
-                    match = prods_all[(prods_all['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & (prods_all['tipo'].astype(str) == str(r_ex.get('Tipo','')))]
+                    # Buscamos el producto por ubicación y tipo
+                    match = prods_all[(prods_all['ubicacion'].astype(str) == str(r_ex.get('Ubicacion',''))) & 
+                                      (prods_all['tipo'].astype(str) == str(r_ex.get('Tipo','')))]
+                    
                     if not match.empty:
                         pid = int(match.iloc[0]['id'])
-                        max_idx = -1
-                        for h_idx, h_nom in enumerate(HITOS_LIST):
-                            if pd.notnull(r_ex.get(h_nom)) and str(r_ex.get(h_nom)).strip() != "": max_idx = h_idx
-                        if max_idx >= 0:
-                            for i in range(max_idx + 1): lote_imp.append({"producto_id": pid, "hito": HITOS_LIST[i], "fecha": f_hoy})
+                        
+                        # Recorremos cada hito en la fila del Excel
+                        for h_nom in HITOS_LIST:
+                            fecha_celda = r_ex.get(h_nom)
+                            
+                            # Si la celda tiene una fecha (no está vacía)
+                            if pd.notnull(fecha_celda) and str(fecha_celda).strip() != "":
+                                # Convertimos la fecha a string (por si viene como objeto datetime)
+                                if isinstance(fecha_celda, (datetime, pd.Timestamp)):
+                                    f_str = fecha_celda.strftime("%d/%m/%Y")
+                                else:
+                                    f_str = str(fecha_celda).strip()
+                                
+                                lote_imp.append({
+                                    "producto_id": pid, 
+                                    "hito": h_nom, 
+                                    "fecha": f_str
+                                })
+                
                 if lote_imp:
-                    supabase.table("seguimiento").upsert(pd.DataFrame(lote_imp).drop_duplicates().to_dict(orient='records'), on_conflict="producto_id, hito").execute()
-                    st.success("Importación exitosa."); st.rerun()
+                    supabase.table("seguimiento").upsert(
+                        lote_imp, 
+                        on_conflict="producto_id, hito"
+                    ).execute()
+                    st.success("✅ Importación exitosa con fechas originales."); st.rerun()
 
         with t4:
             df_exp = prods_all.copy()
