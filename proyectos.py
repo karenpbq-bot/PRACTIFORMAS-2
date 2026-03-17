@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, date
-from base_datos import crear_proyecto, obtener_proyectos, eliminar_proyecto, obtener_supervisores, conectar
+from base_datos import crear_proyecto, obtener_proyectos, eliminar_proyecto_completo, obtener_supervisores, conectar
 
 def mostrar():
     st.title("📁 Gestión de Proyectos Nuevo")
@@ -116,6 +116,32 @@ def mostrar():
             # 1. Se muestra la tabla de proyectos encontrados
             st.dataframe(df_p[['codigo', 'proyecto_text', 'cliente', 'partida', 'avance']], hide_index=True)
 
+            # === SELECCIÓN PARA GESTIÓN Y ELIMINACIÓN ===
+            st.divider()
+            opciones_proy = df_p['proyecto_display'].tolist()
+            seleccionado = st.selectbox("🎯 Selecciona para gestionar Matriz o Eliminar:", ["-- Seleccionar --"] + opciones_proy)
+
+            if seleccionado != "-- Seleccionar --":
+                # Extraemos el ID del proyecto seleccionado
+                id_sel = df_p[df_p['proyecto_display'] == seleccionado]['id'].values[0]
+                st.session_state.id_p_sel = id_sel
+                
+                st.success(f"✅ Proyecto '{seleccionado}' seleccionado.")
+                
+                # --- NUEVA ZONA DE PELIGRO (Punto 1 de tus requerimientos) ---
+                with st.expander("🚫 Zona de Peligro"):
+                    st.write("Esta acción eliminará el proyecto y TODOS sus registros asociados (Productos, Seguimientos e Incidencias).")
+                    # Checkbox de seguridad adicional
+                    confirmar = st.checkbox(f"Confirmo que deseo borrar permanentemente el proyecto {seleccionado}")
+                    
+                    if st.button("🔥 Eliminar Proyecto Completo", type="primary", disabled=not confirmar):
+                        if eliminar_proyecto_completo(id_sel):
+                            st.success("Proyecto eliminado con éxito.")
+                            st.session_state.id_p_sel = None # Limpiamos la selección
+                            st.rerun()
+                
+                st.info("Ahora puedes ir a la pestaña **'📦 Matriz de Productos'** para cargar el Excel o agregar ítems manualmente.")
+                
             # === INSERCIÓN AQUÍ: SELECCIÓN PARA MATRIZ ===
             st.divider()
             opciones_proy = df_p['proyecto_display'].tolist()
