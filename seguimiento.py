@@ -253,7 +253,7 @@ def mostrar(supervisor_id=None):
             cols = st.columns([2.5] + [0.7]*8 + [1.5])
             # Mostramos el Código de Etiqueta primero para identificación rápida
             id_etiqueta = p.get('codigo_etiqueta', 'S/N')
-            cols[0].write(f"**{id_etiqueta}** - {p['ubicacion']} ({p['tipo']})")
+            cols[0].write(f"{p['ubicacion']} | {p['tipo']} | **{p['ml']} ML**")
             for i, h in enumerate(HITOS_LIST):
                 en_db = not segs[(segs['producto_id'] == p['id']) & (segs['hito'] == h)].empty
                 idx_mem = next((idx for idx, d in enumerate(st.session_state.cambios_pendientes) if d["pid"] == p['id'] and d["hito"] == h), None)
