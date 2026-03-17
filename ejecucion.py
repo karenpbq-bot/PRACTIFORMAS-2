@@ -153,11 +153,11 @@ def mostrar():
                         tickformat="%b %Y"
                     )
 
-                    # --- CAMBIOS SOLICITADOS: ALTURA FIJA Y MENOS ESPACIO ---
+                    # --- AJUSTES DE ALTURA Y ESPACIO (CAMBIOS SOLICITADOS) ---
                     fig.update_layout(
                         barmode='group', 
-                        bargap=0.15, 
-                        height=220 * len(proyectos_sel), 
+                        bargap=0.15, # Barras más juntas (antes 0.4)
+                        height=220 * len(proyectos_sel), # Altura reducida y fija por proyecto (antes 350)
                         margin=dict(l=10, r=10, t=50, b=10), 
                         showlegend=False
                     )
