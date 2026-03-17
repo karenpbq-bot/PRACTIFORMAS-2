@@ -70,7 +70,7 @@ def mostrar():
                     if p_data.get(i_c) and p_data.get(f_c):
                         data_final.append(dict(Proyecto=p_nom, Etapa=et, Inicio=p_data[i_c], Fin=p_data[f_c], Color="#87CEEB", Tipo="1_Planificado"))
             
-            # C. Data Real (Lectura Horizontal)
+            # --- C. DATA REAL (CON PARCHE DE VISIBILIDAD TOTAL) ---
             p_codigo_act = p_data.get('codigo')
             res_av = supabase.table("avances_etapas").select("*").eq("codigo", p_codigo_act).execute()
             
@@ -80,12 +80,30 @@ def mostrar():
                 
                 for etapa_nom, col_bd in mapeo_cols.items():
                     porcentaje_etapa = row_av.get(col_bd, 0)
-                    if porcentaje_etapa > 0:
-                        color_etapa = obtener_color_semaforo(porcentaje_etapa)
-                        f_ini_r = row_av.get('fecha_inicio_real') or p_data.get(f'p_{etapa_nom[:3].lower()}_i')
-                        f_fin_r = row_av.get('fecha_fin_real') or p_data.get(f'p_{etapa_nom[:3].lower()}_f')
+                    
+                    # Intentamos sacar fechas de la tabla horizontal, o usamos hoy como fallback si hay avance
+                    f_i = row_av.get('fecha_inicio_real')
+                    f_f = row_av.get('fecha_fin_real')
 
-                        data_final.append(dict(Proyecto=p_nom, Etapa=etapa_nom, Inicio=f_ini_r, Fin=f_fin_r, Color=color_etapa, Tipo="2_Real"))
+                    if porcentaje_etapa > 0 and f_i:
+                        color_etapa = obtener_color_semaforo(porcentaje_etapa)
+                        
+                        # Convertir a datetime para poder comparar y sumar horas
+                        dt_i = pd.to_datetime(f_i)
+                        dt_f = pd.to_datetime(f_f)
+
+                        # Forzar visibilidad si es el mismo día
+                        if dt_i == dt_f:
+                            dt_f = dt_f + pd.Timedelta(hours=23)
+
+                        data_final.append(dict(
+                            Proyecto=p_nom, 
+                            Etapa=etapa_nom, 
+                            Inicio=dt_i, 
+                            Fin=dt_f, 
+                            Color=color_etapa, 
+                            Tipo="2_Real"
+                        ))
 
         # --- RENDERIZADO PESTAÑA GANTT ---
         with tab_gantt:
