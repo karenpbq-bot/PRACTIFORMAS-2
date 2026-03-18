@@ -72,73 +72,55 @@ def mostrar():
         # UBICACIÓN: Dentro de 'with tab2:'
         with tab2:
             try:
-                # 1. Recuperamos los datos incluyendo el ID necesario para las acciones
+                # CAMBIO CRÍTICO: Seleccionamos el 'id' explícitamente
                 res_u = supabase.table("usuarios").select("id, nombre_completo, nombre_usuario, rol").execute()
-                
                 if res_u.data:
-                    # Encabezados de tabla personalizados para mejor lectura
-                    c_h1, c_h2, c_h3, c_h4 = st.columns([2.5, 2, 1.5, 1])
-                    c_h1.subheader("Nombre Real")
-                    c_h2.subheader("Usuario")
-                    c_h3.subheader("Rol")
-                    c_h4.subheader("Acción")
-                    st.divider()
-
                     for user in res_u.data:
-                        col1, col2, col3, col4 = st.columns([2.5, 2, 1.5, 1])
+                        # Diseño modular en filas
+                        c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
+                        c1.write(f"**{user['nombre_completo']}**")
+                        c2.write(f"@{user['nombre_usuario']}")
+                        c3.write(f"Role: {user['rol']}")
                         
-                        col1.write(user['nombre_completo'])
-                        col2.write(user['nombre_usuario'])
-                        col3.write(user['rol'])
-                        
-                        # Usamos un popover para agrupar Editar y Eliminar y no saturar la fila
-                        with col4.popover("⚙️"):
-                            if st.button("📝 Editar", key=f"edit_{user['id']}", use_container_width=True):
-                                st.session_state.editando_id = user['id']
-                                st.session_state.datos_editar = user
+                        # Botones de Acción
+                        with c4.popover("⚙️"):
+                            if st.button("Editar", key=f"btn_ed_{user['id']}"):
+                                st.session_state.user_edit_id = user['id']
+                                st.session_state.user_edit_data = user
                                 st.rerun()
                             
-                            if st.button("🗑️ Borrar", key=f"del_{user['id']}", use_container_width=True):
-                                # Evitar que el usuario activo se borre a sí mismo
+                            if st.button("Eliminar", key=f"btn_del_{user['id']}"):
                                 if user['id'] == st.session_state.id_usuario:
-                                    st.error("No puedes eliminar tu propia cuenta.")
+                                    st.error("No puedes eliminarte a ti mismo.")
                                 else:
-                                    from base_datos import eliminar_usuario
-                                    if eliminar_usuario(user['id']):
-                                        st.success("Usuario eliminado.")
-                                        st.rerun()
+                                    from base_datos import eliminar_usuario_bd
+                                    eliminar_usuario_bd(user['id'])
+                                    st.success("Eliminado.")
+                                    st.rerun()
                         st.divider()
 
-                # 2. FORMULARIO FLOTANTE DE EDICIÓN
-                if "editando_id" in st.session_state:
-                    st.markdown("---")
-                    with st.expander("🛠️ EDITANDO USUARIO", expanded=True):
-                        with st.form("form_edicion_rapida"):
-                            u_id = st.session_state.editando_id
-                            nuevo_nom = st.text_input("Nombre Completo:", value=st.session_state.datos_editar['nombre_completo'])
-                            nuevo_user = st.text_input("Nombre de Usuario:", value=st.session_state.datos_editar['nombre_usuario'])
+                # MODAL DE EDICIÓN (Aparece solo al dar click en Editar)
+                if "user_edit_id" in st.session_state:
+                    with st.expander("📝 Editar Datos de Usuario", expanded=True):
+                        with st.form("edit_form"):
+                            n_nom = st.text_input("Nombre Real", value=st.session_state.user_edit_data['nombre_completo'])
+                            n_usu = st.text_input("Usuario (Login)", value=st.session_state.user_edit_data['nombre_usuario'])
+                            n_rol = st.selectbox("Rol", ["Supervisor", "Gerente", "Administrador"], 
+                                               index=["Supervisor", "Gerente", "Administrador"].index(st.session_state.user_edit_data['rol']))
                             
-                            # Mantenemos la consistencia con los roles originales
-                            roles_lista = ["Supervisor", "Gerente", "Administrador"]
-                            idx_rol = roles_lista.index(st.session_state.datos_editar['rol']) if st.session_state.datos_editar['rol'] in roles_lista else 0
-                            nuevo_rol = st.selectbox("Cambiar Rol:", roles_lista, index=idx_rol)
-                            
-                            col_btn1, col_btn2 = st.columns(2)
-                            if col_btn1.form_submit_button("✅ Guardar Cambios"):
-                                from base_datos import actualizar_datos_usuario
-                                exito = actualizar_datos_usuario(u_id, {
-                                    "nombre_completo": nuevo_nom,
-                                    "nombre_usuario": nuevo_user,
-                                    "rol": nuevo_rol
+                            col_f1, col_f2 = st.columns(2)
+                            if col_f1.form_submit_button("Guardar"):
+                                from base_datos import actualizar_usuario_bd
+                                actualizar_usuario_bd(st.session_state.user_edit_id, {
+                                    "nombre_completo": n_nom,
+                                    "nombre_usuario": n_usu,
+                                    "rol": n_rol
                                 })
-                                if exito:
-                                    del st.session_state.editando_id
-                                    st.success("Usuario actualizado correctamente.")
-                                    st.rerun()
-                            
-                            if col_btn2.form_submit_button("❌ Cancelar"):
-                                del st.session_state.editando_id
+                                del st.session_state.user_edit_id
+                                st.rerun()
+                            if col_f2.form_submit_button("Cancelar"):
+                                del st.session_state.user_edit_id
                                 st.rerun()
 
             except Exception as e:
-                st.error(f"Error al cargar la lista de equipo: {e}")
+                st.error(f"Error: {e}")
