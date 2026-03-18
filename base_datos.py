@@ -290,3 +290,26 @@ def actualizar_avance_real(id_p):
             sincronizar_avances_estructural(res.data['codigo'])
     except:
         pass
+
+# --- AGREGAR AL FINAL DE LA SECCIÓN 2 (GESTIÓN DE USUARIOS) ---
+
+def eliminar_usuario(id_usuario):
+    """Borra un usuario de la base de datos por su ID único."""
+    try:
+        supabase = conectar()
+        # Verificar que no sea el último administrador podría ser una mejora futura
+        res = supabase.table("usuarios").delete().eq("id", id_usuario).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error al eliminar usuario: {e}")
+        return False
+
+def actualizar_datos_usuario(id_usuario, nuevos_datos):
+    """Actualiza nombre, login o rol de un usuario."""
+    try:
+        supabase = conectar()
+        res = supabase.table("usuarios").update(nuevos_datos).eq("id", id_usuario).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error al actualizar usuario: {e}")
+        return False
