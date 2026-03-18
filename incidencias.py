@@ -37,7 +37,7 @@ def mostrar():
     with tab_p:
         st.subheader("Configuración del Bloque de Piezas")
         c1, c2 = st.columns(2)
-        proy_p = c1.selectbox("Proyecto:", list(dict_proyectos.keys()), key="proy_p_sel")
+        
         motivo_p = c2.selectbox("Motivo:", MOTIVOS, key="mot_p_sel")
         
         # ... (dentro de la Pestaña 1: Piezas)
@@ -87,7 +87,9 @@ def mostrar():
             st.write("### 📋 Bloque de Piezas Consolidado")
             st.dataframe(pd.DataFrame(st.session_state.tmp_piezas), use_container_width=True)
             if st.button("🚀 ENVIAR REQUERIMIENTO (PIEZAS)", type="primary"):
-                registrar_incidencia_detallada(dict_proyectos[proy_p], "Piezas", motivo_p, st.session_state.tmp_piezas, [], st.session_state.get('id_usuario'))
+                # Cambiamos 'dict_proyectos[proy_p]' por 'id_proyecto_actual'
+                registrar_incidencia_detallada(id_proyecto_actual, "Piezas", motivo_p, 
+                                               st.session_state.tmp_piezas, [], st.session_state.get('id_usuario'))
                 st.session_state.tmp_piezas = []
                 st.success("Requerimiento enviado con éxito."); st.rerun()
 
@@ -95,7 +97,7 @@ def mostrar():
     with tab_m:
         st.subheader("Configuración del Bloque de Materiales")
         cm1, cm2 = st.columns(2)
-        proy_m = cm1.selectbox("Proyecto:", list(dict_proyectos.keys()), key="proy_m_sel")
+        
         motivo_m = cm2.selectbox("Motivo:", MOTIVOS, key="mot_m_sel")
 
         with st.container(border=True):
@@ -111,7 +113,9 @@ def mostrar():
         if st.session_state.tmp_mats:
             st.table(pd.DataFrame(st.session_state.tmp_mats))
             if st.button("🚀 ENVIAR CONSOLIDADO DE MATERIALES"):
-                registrar_incidencia_detallada(dict_proyectos[proy_m], "Materiales", motivo_m, [], st.session_state.tmp_mats, st.session_state.get('id_usuario'))
+                # Usamos id_proyecto_actual aquí también
+                registrar_incidencia_detallada(id_proyecto_actual, "Materiales", motivo_m, 
+                                               [], st.session_state.tmp_mats, st.session_state.get('id_usuario'))
                 st.session_state.tmp_mats = []
                 st.success("Enviado con éxito"); st.rerun()
 
