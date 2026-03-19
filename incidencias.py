@@ -119,66 +119,57 @@ def mostrar():
                 st.session_state.tmp_mats = []
                 st.success("Enviado con éxito"); st.rerun()
 
-   # --- PESTAÑA 3: HISTORIAL (VERSIÓN FINAL CORREGIDA) ---
+  # --- PESTAÑA 3: HISTORIAL (FORMATO DE FECHA D/M/Y) ---
     with tab_h:
         historial = obtener_incidencias_resumen()
         
         if not historial.empty:
             for _, inc in historial.iterrows():
-                # 1. Recuperar datos actuales de la base de datos
                 f_alm = inc.get('fecha_almacen')
                 f_sol = inc.get('fecha_solicitante')
                 f_teo = inc.get('fecha_teowin')
                 id_inc = inc['id']
                 
-                # 2. Semáforos Visuales para el Rótulo
-                s1 = "🟩" if pd.notnull(f_alm) and f_alm != "" else "🟥"
-                s2 = "🟩" if pd.notnull(f_sol) and f_sol != "" else "🟥"
-                s3 = "🟩" if pd.notnull(f_teo) and f_teo != "" else "🟥"
+                # Semáforos Visuales
+                s1 = "🟩" if pd.notnull(f_alm) and str(f_alm).strip() != "" else "🟥"
+                s2 = "🟩" if pd.notnull(f_sol) and str(f_sol).strip() != "" else "🟥"
+                s3 = "🟩" if pd.notnull(f_teo) and str(f_teo).strip() != "" else "🟥"
                 
                 titulo_rotulo = f"REQ-{id_inc} | {inc['proyecto_text']} | {inc['tipo_requerimiento']}  [{s1}{s2}{s3}]"
 
                 with st.expander(titulo_rotulo):
-                    # --- FILA ÚNICA DE GESTIÓN (HORIZONTAL) ---
                     c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 2.5, 0.5])
                     
-                    # Checkboxes (detectan el estado visual)
-                    v_alm = c1.checkbox("📦 Almacén", value=(s1 == "🟩"), key=f"check_alm_{id_inc}")
+                    v_alm = c1.checkbox("📦 Almacén", value=(s1 == "🟩"), key=f"chk_alm_{id_inc}")
                     if f_alm: c1.caption(f"📅 {f_alm}")
 
-                    v_sol = c2.checkbox("👤 Solicitante", value=(s2 == "🟩"), key=f"check_sol_{id_inc}")
+                    v_sol = c2.checkbox("👤 Solicitante", value=(s2 == "🟩"), key=f"chk_sol_{id_inc}")
                     if f_sol: c2.caption(f"📅 {f_sol}")
 
-                    v_teo = c3.checkbox("🖥️ Teowin", value=(s3 == "🟩"), key=f"check_teo_{id_inc}")
+                    v_teo = c3.checkbox("🖥️ Teowin", value=(s3 == "🟩"), key=f"chk_teo_{id_inc}")
                     if f_teo: c3.caption(f"📅 {f_teo}")
                     
-                    # Nota de gestión
                     v_not = c4.text_input("Nota", value=inc.get('obs_gestion', ""), 
-                                         key=f"input_not_{id_inc}", placeholder="Nota de gestión...", label_visibility="collapsed")
+                                         key=f"txt_not_{id_inc}", placeholder="Nota de gestión...", label_visibility="collapsed")
 
-                    # BOTÓN DE GUARDADO (💾)
-                    if c5.button("💾", key=f"btn_save_{id_inc}"):
+                    if c5.button("💾", key=f"save_btn_{id_inc}"):
+                        # --- FORMATO DE FECHA ESTRICTO: DÍA/MES/AÑO ---
                         f_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
                         
-                        # Construcción del paquete de datos
-                        # Si el check cambió de False a True -> ponemos fecha
-                        # Si el check se mantiene True -> dejamos la fecha que estaba
-                        # Si el check es False -> ponemos None
                         datos_upd = {
-                            "fecha_almacen": f_hoy if v_alm and not f_alm else (f_alm if v_alm else None),
-                            "fecha_solicitante": f_hoy if v_sol and not f_sol else (f_sol if v_sol else None),
-                            "fecha_teowin": f_hoy if v_teo and not f_teo else (f_teo if v_teo else None),
+                            "fecha_almacen": f_hoy if v_alm and (not f_alm or str(f_alm).strip() == "") else (f_alm if v_alm else None),
+                            "fecha_solicitante": f_hoy if v_sol and (not f_sol or str(f_sol).strip() == "") else (f_sol if v_sol else None),
+                            "fecha_teowin": f_hoy if v_teo and (not f_teo or str(f_teo).strip() == "") else (f_teo if v_teo else None),
                             "obs_gestion": v_not
                         }
                         
                         try:
-                            # Importación local para evitar errores de carga
                             from base_datos import actualizar_gestion_incidencia
                             actualizar_gestion_incidencia(id_inc, datos_upd)
                             st.success(f"REQ-{id_inc} Actualizado")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error al guardar: {e}")
+                            st.error(f"Error de formato o conexión: {e}")
 
                     st.markdown("---")
                     st.write(f"**Motivo:** {inc['categoria']} | **Estado:** {inc['estado']}")
