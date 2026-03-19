@@ -119,51 +119,51 @@ def mostrar():
                 st.session_state.tmp_mats = []
                 st.success("Enviado con éxito"); st.rerun()
 
-    # --- PESTAÑA 3: HISTORIAL ---
+    # --- PESTAÑA 3: HISTORIAL (GESTIÓN INTEGRADA EN RÓTULO) ---
     with tab_h:
         historial = obtener_incidencias_resumen()
         if not historial.empty:
             for _, inc in historial.iterrows():
-                # Esta línea debe tener 16 espacios (o 4 tabs) a la izquierda
-                with st.expander(f"REQ-{inc['id']} | {inc['proyecto_text']} | {inc['tipo_requerimiento']}"):
-                    
-                    st.markdown("##### 🕒 Gestión de Seguimiento")
-                    c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-                    
-                    # Lógica de Checkboxes y Fechas
-                    f_alm = inc.get('fecha_almacen')
-                    v_alm = c1.checkbox("📦 Almacén", value=pd.notnull(f_alm) and f_alm != "", key=f"alm_{inc['id']}")
-                    c1.caption(f"📅 {f_alm if f_alm else 'Pendiente'}")
+                # 1. Definimos la fila del Rótulo (Título + Checks + Nota + Guardar)
+                # Ajustamos los pesos de las columnas para que la nota tenga espacio
+                c_tit, c_alm, c_sol, c_teo, c_not, c_sav = st.columns([2, 0.6, 0.7, 0.6, 1.8, 0.4])
+                
+                with c_tit:
+                    # El desplegable ahora solo envuelve el detalle interno
+                    exp = st.expander(f"REQ-{inc['id']} | {inc['proyecto_text']}")
+                
+                # 2. Checks de Fecha (Capturan la fecha al marcar y guardar)
+                f_alm = inc.get('fecha_almacen')
+                v_alm = c_alm.checkbox("Alm.", value=pd.notnull(f_alm) and f_alm != "", key=f"alm_{inc['id']}", help=f"Registrado: {f_alm}" if f_alm else "Pendiente")
+                
+                f_sol = inc.get('fecha_solicitante')
+                v_sol = c_sol.checkbox("Sol.", value=pd.notnull(f_sol) and f_sol != "", key=f"sol_{inc['id']}", help=f"Registrado: {f_sol}" if f_sol else "Pendiente")
+                
+                f_teo = inc.get('fecha_teowin')
+                v_teo = c_teo.checkbox("Teo.", value=pd.notnull(f_teo) and f_teo != "", key=f"teo_{inc['id']}", help=f"Registrado: {f_teo}" if f_teo else "Pendiente")
+                
+                # 3. La columna de Observaciones de Gestión (Visible en el rótulo)
+                v_not = c_not.text_input("Nota", value=inc.get('obs_gestion', ""), key=f"not_{inc['id']}", label_visibility="collapsed", placeholder="Notas de gestión...")
 
-                    f_sol = inc.get('fecha_solicitante')
-                    v_sol = c2.checkbox("👤 Solicitante", value=pd.notnull(f_sol) and f_sol != "", key=f"sol_{inc['id']}")
-                    c2.caption(f"📅 {f_sol if f_sol else 'Pendiente'}")
+                # 4. Botón de Guardado
+                if c_sav.button("💾", key=f"save_{inc['id']}"):
+                    f_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    datos_upd = {
+                        "fecha_almacen": f_hoy if v_alm and not f_alm else (None if not v_alm else f_alm),
+                        "fecha_solicitante": f_hoy if v_sol and not f_sol else (None if not v_sol else f_sol),
+                        "fecha_teowin": f_hoy if v_teo and not f_teo else (None if not v_teo else f_teo),
+                        "obs_gestion": v_not
+                    }
+                    from base_datos import actualizar_gestion_incidencia
+                    actualizar_gestion_incidencia(inc['id'], datos_upd)
+                    st.rerun()
 
-                    f_teo = inc.get('fecha_teowin')
-                    v_teo = c3.checkbox("🖥️ Teowin", value=pd.notnull(f_teo) and f_teo != "", key=f"teo_{inc['id']}")
-                    c3.caption(f"📅 {f_teo if f_teo else 'Pendiente'}")
-                    
-                    v_obs = c4.text_input("📝 Notas de Gestión", value=inc.get('obs_gestion', ""), key=f"obs_g_{inc['id']}")
-
-                    # El botón debe estar alineado con los checkboxes (dentro del expander)
-                    if st.button("💾 Actualizar Gestión", key=f"btn_g_{inc['id']}"):
-                        f_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
-                        
-                        datos_upd = {
-                            "fecha_almacen": f_hoy if v_alm and not f_alm else (None if not v_alm else f_alm),
-                            "fecha_solicitante": f_hoy if v_sol and not f_sol else (None if not v_sol else f_sol),
-                            "fecha_teowin": f_hoy if v_teo and not f_teo else (None if not v_teo else f_teo),
-                            "obs_gestion": v_obs
-                        }
-                        
-                        from base_datos import actualizar_gestion_incidencia
-                        actualizar_gestion_incidencia(inc['id'], datos_upd)
-                        st.success("Gestión Guardada")
-                        st.rerun()
-
-                    st.divider()
-                    st.write(f"**Motivo:** {inc['categoria']} | **Estado:** {inc['estado']}")
+                # 5. CONTENIDO INTERNO (Lo que NO querías mover)
+                with exp:
+                    st.info(f"**Tipo:** {inc['tipo_requerimiento']} | **Motivo:** {inc['categoria']} | **Estado:** {inc['estado']}")
                     if inc.get('detalles'):
+                        # Aquí siguen apareciendo las observaciones originales de cada pieza
                         st.dataframe(pd.DataFrame(inc['detalles']), use_container_width=True)
+            st.divider()
         else:
             st.info("No hay requerimientos registrados.")
