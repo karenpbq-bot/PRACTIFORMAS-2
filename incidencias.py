@@ -152,24 +152,17 @@ def mostrar():
                     v_not = c4.text_input("Nota", value=inc.get('obs_gestion', ""), 
                                          key=f"txt_not_{id_inc}", placeholder="Nota de gestión...", label_visibility="collapsed")
 
-                    if c5.button("💾", key=f"save_btn_{id_inc}"):
-                        # --- FORMATO DE FECHA ESTRICTO: DÍA/MES/AÑO ---
-                        f_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
-                        
-                        datos_upd = {
-                            "fecha_almacen": f_hoy if v_alm and (not f_alm or str(f_alm).strip() == "") else (f_alm if v_alm else None),
-                            "fecha_solicitante": f_hoy if v_sol and (not f_sol or str(f_sol).strip() == "") else (f_sol if v_sol else None),
-                            "fecha_teowin": f_hoy if v_teo and (not f_teo or str(f_teo).strip() == "") else (f_teo if v_teo else None),
-                            "obs_gestion": v_not
-                        }
-                        
+                    if c5.button("💾", key=f"btn_test_{id_inc}"):
+                        # Intentamos actualizar SOLO la nota para ver si el problema es la columna de fecha
                         try:
-                            from base_datos import actualizar_gestion_incidencia
-                            actualizar_gestion_incidencia(id_inc, datos_upd)
-                            st.success(f"REQ-{id_inc} Actualizado")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error de formato o conexión: {e}")
+                        from base_datos import actualizar_gestion_incidencia
+                        # Probamos enviar solo la nota
+                        test_data = {"obs_gestion": v_not} 
+                        actualizar_gestion_incidencia(id_inc, test_data)
+                        st.success("Conexión probada con éxito")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Ni siquiera la nota pudo guardarse: {e}")
 
                     st.markdown("---")
                     st.write(f"**Motivo:** {inc['categoria']} | **Estado:** {inc['estado']}")
