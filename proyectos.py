@@ -184,7 +184,7 @@ def mostrar():
             rol_actual = st.session_state.get('rol')
 
             # --- NUEVA VALIDACIÓN DE ROL PARA INGRESO ---
-            if rol_actual in ["Administrador", "Gerente"]:
+            if rol_actual in ["administrador", "admin", "gerente"]:
                 # --- 1. SECCIÓN: AGREGAR PRODUCTO (MANUAL) ---
                 with st.expander("➕ Agregar Producto", expanded=False):
                     # ... (Aquí va todo tu código actual de form_producto_manual) ...
