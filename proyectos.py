@@ -186,14 +186,7 @@ def mostrar():
             # --- NUEVA VALIDACIÓN DE ROL PARA INGRESO ---
             if rol_actual in ["administrador", "admin", "gerente"]:
                 # --- 1. SECCIÓN: AGREGAR PRODUCTO (MANUAL) ---
-                with st.expander("➕ Agregar Producto", expanded=False):
-                    # ... (Aquí va todo tu código actual de form_producto_manual) ...
-                    pass
-
-                # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (EXCEL) ---
-                with st.expander("📥 Importar Lista de Productos"):
-                    # ... (Aquí va todo tu código actual de file_uploader e importación masiva) ...
-                    pass
+                                
             else:
                 st.warning("🔒 Tu perfil de Supervisor solo permite la visualización de la matriz.")
             
