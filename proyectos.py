@@ -125,21 +125,8 @@ def mostrar():
                 # Extraemos el ID del proyecto seleccionado
                 id_sel = df_p[df_p['proyecto_display'] == seleccionado]['id'].values[0]
                 st.session_state.id_p_sel = id_sel
+                
                 st.success(f"✅ Proyecto '{seleccionado}' seleccionado.")
-
-                # NUEVA RESTRICCIÓN DE ROL AQUÍ
-                if st.session_state.get('rol') in ["Administrador", "Gerente"]:
-                    with st.expander("🚫 Zona de Peligro"):
-                        st.write("Esta acción eliminará el proyecto y TODOS sus registros asociados.")
-                        confirmar = st.checkbox(f"Confirmo que deseo borrar permanentemente")
-            
-                        if st.button("🔥 Eliminar Proyecto Completo", type="primary", disabled=not confirmar):
-                            if eliminar_proyecto_completo(id_sel):
-                                st.success("Proyecto eliminado.")
-                                st.session_state.id_p_sel = None
-                                st.rerun()
-                else:
-                    st.info("ℹ️ La eliminación de proyectos está reservada para niveles administrativos.")
                 
                 # --- NUEVA ZONA DE PELIGRO (Punto 1 de tus requerimientos) ---
                 with st.expander("🚫 Zona de Peligro"):
@@ -172,85 +159,82 @@ def mostrar():
                 st.success(f"✅ Proyecto '{seleccionado}' seleccionado.")
                 st.info("Ahora puedes ir a la pestaña **'📦 Matriz de Productos'** para cargar el Excel o agregar ítems manualmente.")
     
-   with tab3:
+    with tab3:
         if st.session_state.get('id_p_sel'):
-            # 0. Recuperar información base del proyecto seleccionado
+            # 0. Recuperar info del proyecto para el título y código base
             info_p = df_p[df_p['id'] == st.session_state.id_p_sel].iloc[0]
             nombre_proyecto = info_p['proyecto_display']
-            p_cod_base = info_p['codigo']
+            p_cod_base = info_p['codigo'] # El prefijo del proyecto (ej: PTF-001)
             
             st.subheader(f"📦 Matriz de Productos: {nombre_proyecto}")
 
-            # --- VALIDACIÓN DE ROL UNIFICADA ---
-            # Normalizamos el rol a minúsculas para que te reconozca como Admin siempre
-            rol_actual = str(st.session_state.get('rol', '')).lower().strip()
+            # --- 1. SECCIÓN: AGREGAR PRODUCTO (MANUAL) ---
+            with st.expander("➕ Agregar Producto", expanded=False):
+                with st.form("form_producto_manual", clear_on_submit=True):
+                    c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+                    u = c1.text_input("Ubicación")
+                    t = c2.text_input("Tipo")
+                    c = c3.number_input("Cantidad", min_value=1, value=1, step=1)
+                    m = c4.number_input("ML", min_value=0.0, format="%.2f")
+                    
+                    if st.form_submit_button("Guardar Producto"):
+                        if u and t:
+                            try:
+                                # CONSULTA CORRELATIVO ACTUAL
+                                res_c = conectar().table("productos").select("id", count="exact").eq("proyecto_id", st.session_state.id_p_sel).execute()
+                                nuevo_n = (res_c.count if res_c.count else 0) + 1
+                                etiqueta = f"{p_cod_base}-{str(nuevo_n).zfill(4)}"
 
-            if rol_actual in ["administrador", "admin", "gerente"]:
-                # --- 1. SECCIÓN: AGREGAR PRODUCTO (MANUAL) ---
-                with st.expander("➕ Agregar Producto", expanded=False):
-                    with st.form("form_producto_manual", clear_on_submit=True):
-                        c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
-                        u = c1.text_input("Ubicación")
-                        t = c2.text_input("Tipo")
-                        c = c3.number_input("Cantidad", min_value=1, value=1, step=1)
-                        m = c4.number_input("ML", min_value=0.0, format="%.2f")
-                        
-                        if st.form_submit_button("Guardar Producto"):
-                            if u and t:
-                                try:
-                                    # CONSULTA CORRELATIVO ACTUAL
-                                    res_c = conectar().table("productos").select("id", count="exact").eq("proyecto_id", st.session_state.id_p_sel).execute()
-                                    nuevo_n = (res_c.count if res_c.count else 0) + 1
-                                    etiqueta = f"{p_cod_base}-{str(nuevo_n).zfill(4)}"
-
-                                    datos_producto = {
-                                        "proyecto_id": int(st.session_state.id_p_sel),
-                                        "codigo_etiqueta": etiqueta,
-                                        "ubicacion": str(u).strip(),
-                                        "tipo": str(t).strip(),
-                                        "ctd": int(c),
-                                        "ml": float(m)
-                                    }
-                                    conectar().table("productos").insert(datos_producto).execute()
-                                    st.success(f"✅ Guardado con código: {etiqueta}")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error técnico al guardar: {e}")
-
-                # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (EXCEL) ---
-                with st.expander("📥 Importar Lista de Productos"):
-                    f_up = st.file_uploader("Subir Excel", type=["xlsx", "csv"], key="uploader_final_fix")
-                    if f_up and st.button("🚀 Iniciar Importación Masiva"):
-                        try:
-                            df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
-                            df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
-                            
-                            res_count = conectar().table("productos").select("id", count="exact").eq("proyecto_id", st.session_state.id_p_sel).execute()
-                            conteo_actual = res_count.count if res_count.count else 0
-                            
-                            lote = []
-                            for i, (index, r) in enumerate(df_ex.iterrows(), start=1):
-                                correlativo = str(conteo_actual + i).zfill(4)
-                                lote.append({
+                                datos_producto = {
                                     "proyecto_id": int(st.session_state.id_p_sel),
-                                    "codigo_etiqueta": f"{p_cod_base}-{correlativo}",
-                                    "ubicacion": str(r['UBICACION']).strip(),
-                                    "tipo": str(r['TIPO']).strip(),
-                                    "ctd": int(r['CTD']),
-                                    "ml": float(r['Medidas (ml)'])
-                                })
-                            
-                            conectar().table("productos").insert(lote).execute()
-                            st.success(f"✅ Se cargaron {len(lote)} productos nuevos.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al importar: {e}")
-            else:
-                # Mensaje visual informativo para Supervisores
-                st.warning("🔒 Tu perfil de Supervisor solo permite la visualización de la matriz.")
+                                    "codigo_etiqueta": etiqueta, # <--- NUEVA COLUMNA
+                                    "ubicacion": str(u).strip(),
+                                    "tipo": str(t).strip(),
+                                    "ctd": int(c),
+                                    "ml": float(m)
+                                }
+                                conectar().table("productos").insert(datos_producto).execute()
+                                st.success(f"✅ Guardado con código: {etiqueta}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error técnico al guardar: {e}")
 
-            # --- 3. VISUALIZACIÓN DE LA MATRIZ (Visible para TODOS) ---
+            # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (EXCEL) ---
+            with st.expander("📥 Importar Lista de Productos"):
+                f_up = st.file_uploader("Subir Excel", type=["xlsx", "csv"])
+                if f_up and st.button("🚀 Iniciar Importación Masiva"):
+                    try:
+                        df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
+                        df_ex = df_ex.dropna(subset=['UBICACION', 'TIPO'])
+                        
+                        # CONSULTA CORRELATIVO ACTUAL PARA EMPEZAR LA SERIE
+                        res_count = conectar().table("productos").select("id", count="exact").eq("proyecto_id", st.session_state.id_p_sel).execute()
+                        conteo_actual = res_count.count if res_count.count else 0
+                        
+                        lote = []
+                        # Usamos i para el correlativo sumando al conteo actual
+                        for i, (index, r) in enumerate(df_ex.iterrows(), start=1):
+                            correlativo = str(conteo_actual + i).zfill(4)
+                            codigo_etiqueta = f"{p_cod_base}-{correlativo}"
+                            
+                            lote.append({
+                                "proyecto_id": int(st.session_state.id_p_sel),
+                                "codigo_etiqueta": codigo_etiqueta, # <--- NUEVA COLUMNA
+                                "ubicacion": str(r['UBICACION']).strip(),
+                                "tipo": str(r['TIPO']).strip(),
+                                "ctd": int(r['CTD']),
+                                "ml": float(r['Medidas (ml)']) # Asegúrate que el Excel tenga este nombre exacto
+                            })
+                        
+                        conectar().table("productos").insert(lote).execute()
+                        st.success(f"✅ Se cargaron {len(lote)} productos nuevos con códigos correlativos.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al importar: {e}")
+
+            # --- 3. VISUALIZACIÓN DE LA MATRIZ ---
             st.divider()
+            # Añadimos codigo_etiqueta a la consulta
             res_p = conectar().table("productos").select("codigo_etiqueta, ubicacion, tipo, ctd, ml").eq("proyecto_id", st.session_state.id_p_sel).order("codigo_etiqueta").execute()
             
             if res_p.data:
@@ -269,11 +253,9 @@ def mostrar():
                 c1.info(f"**Total Piezas:** {int(df_unificado['Cantidad'].sum())}")
                 c2.info(f"**Total Metraje:** {df_unificado['ML'].sum():.2f} ml")
 
-                # Botón de Vaciar Matriz: Solo para niveles administrativos
-                if rol_actual in ["administrador", "admin", "gerente"]:
-                    if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
-                        conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
-                        st.rerun()
+                if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
+                    conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
+                    st.rerun()
             else:
                 st.info("La matriz está vacía.")
         else:
