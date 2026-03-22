@@ -174,14 +174,15 @@ def mostrar():
     
    with tab3:
         if st.session_state.get('id_p_sel'):
-            # 0. Recuperar info del proyecto
+            # 0. Recuperar información base del proyecto seleccionado
             info_p = df_p[df_p['id'] == st.session_state.id_p_sel].iloc[0]
             nombre_proyecto = info_p['proyecto_display']
             p_cod_base = info_p['codigo']
             
             st.subheader(f"📦 Matriz de Productos: {nombre_proyecto}")
 
-            # --- VALIDACIÓN DE ROL UNIFICADA (Evita duplicidad y errores) ---
+            # --- VALIDACIÓN DE ROL UNIFICADA ---
+            # Convertimos a minúsculas para que 'Admin', 'admin' o 'Administrador' funcionen
             rol_actual = str(st.session_state.get('rol', '')).lower().strip()
 
             if rol_actual in ["administrador", "admin", "gerente"]:
@@ -216,7 +217,7 @@ def mostrar():
 
                 # --- 2. SECCIÓN: IMPORTAR LISTA DE PRODUCTOS (EXCEL) ---
                 with st.expander("📥 Importar Lista de Productos"):
-                    f_up = st.file_uploader("Subir Excel", type=["xlsx", "csv"], key="uploader_matriz_final")
+                    f_up = st.file_uploader("Subir Excel", type=["xlsx", "csv"], key="uploader_matriz_v3")
                     if f_up and st.button("🚀 Iniciar Importación Masiva"):
                         try:
                             df_ex = pd.read_csv(f_up) if f_up.name.endswith('csv') else pd.read_excel(f_up)
@@ -239,10 +240,10 @@ def mostrar():
                         except Exception as e:
                             st.error(f"Error al importar: {e}")
             else:
-                # Mensaje para Supervisores
+                # Mensaje restrictivo para Supervisores
                 st.warning("🔒 Tu perfil de Supervisor solo permite la visualización de la matriz.")
 
-            # --- 3. VISUALIZACIÓN DE LA MATRIZ (Visible para todos) ---
+            # --- 3. VISUALIZACIÓN DE LA MATRIZ (Visible para todos los roles) ---
             st.divider()
             res_p = conectar().table("productos").select("codigo_etiqueta, ubicacion, tipo, ctd, ml").eq("proyecto_id", st.session_state.id_p_sel).order("codigo_etiqueta").execute()
             
@@ -256,7 +257,7 @@ def mostrar():
                 c1.info(f"**Total Piezas:** {int(df_unificado['Cantidad'].sum())}")
                 c2.info(f"**Total Metraje:** {df_unificado['ML'].sum():.2f} ml")
 
-                # Botón de Vaciar (Solo para niveles administrativos)
+                # Botón de Vaciar Matriz: Solo para niveles administrativos
                 if rol_actual in ["administrador", "admin", "gerente"]:
                     if st.button("🗑️ Vaciar Matriz del Proyecto", type="primary"):
                         conectar().table("productos").delete().eq("proyecto_id", st.session_state.id_p_sel).execute()
